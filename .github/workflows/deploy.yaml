@@ -1,0 +1,70 @@
+name: Deploy Homelab
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted 
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: 🧹 Log Rotation & Cleanup
+        run: |
+          LOG_DIR="/home/pi/logs"
+          mkdir -p $LOG_DIR
+          
+          echo "--- 🔄 Starting Log Rotation ---"
+          
+          if [ -f "$LOG_DIR/deploy.log" ]; then
+             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+             mv "$LOG_DIR/deploy.log" "$LOG_DIR/archive-deploy-$TIMESTAMP.log"
+             echo "Previous log archived: archive-deploy-$TIMESTAMP.log"
+          fi
+          
+          find $LOG_DIR -name "archive-deploy-*.log" -mtime +30 -type f -delete
+          echo "Old logs (>30 days) deleted."
+
+      - name: 🔍 Verify Environment
+        run: |
+          echo "Checking tools..."
+          kubectl version --client --short
+          helmfile --version
+          sops --version
+
+      - name: 🚀 Deploy with Helmfile
+        env:
+          PIHOLE_IP: "192.168.1.10"
+          HOMEBRIDGE_IP: "192.168.1.14"
+          TAILSCALE_IP: "192.168.1.15"
+        run: |
+          LOGFILE="/home/pi/logs/deploy.log"
+          
+          {
+            echo "========================================================"
+            echo "🚀 START DEPLOY: $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "Commit: ${{ github.sha }}"
+            echo "Message: ${{ github.event.head_commit.message }}"
+            echo "--------------------------------------------------------"
+          } | tee -a $LOGFILE
+          
+          set -o pipefail
+          
+          echo "Applying Helmfile configuration..." | tee -a $LOGFILE
+          
+          helmfile --helm-secrets apply 2>&1 | tee -a $LOGFILE
+          
+          STATUS=$?
+          
+          echo "--------------------------------------------------------" | tee -a $LOGFILE
+          if [ $STATUS -eq 0 ]; then
+            echo "✅ SUCCESS: Deployment finished at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a $LOGFILE
+          else
+            echo "❌ FAILED (Exit Code: $STATUS): $(date '+%Y-%m-%d %H:%M:%S')" | tee -a $LOGFILE
+            echo "Check log at $LOGFILE for details."
+            exit $STATUS
+          fi
+          echo "========================================================" | tee -a $LOGFILE

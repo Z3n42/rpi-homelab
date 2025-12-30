@@ -1,0 +1,10 @@
+image:
+  tag: latest
+service:
+  type: LoadBalancer
+  loadBalancerIP: {{ requiredEnv "HOMEBRIDGE_IP" }}
+persistence:
+  enabled: true
+  storageClass: longhorn
+  accessMode: ReadWriteOnce
+  size: 1Gi

@@ -1,0 +1,50 @@
+repositories:
+  - name: metallb
+    url: https://metallb.github.io/metallb
+  - name: longhorn
+    url: https://charts.longhorn.io
+  - name: mojo2600
+    url: https://mojo2600.github.io/pihole-kubernetes/
+  - name: tailscale
+    url: https://pkgs.tailscale.com/helmcharts
+  - name: homebridge
+    url: https://oznu.github.io/homebridge-docker/
+
+releases:
+  - name: metallb
+    namespace: metallb-system
+    chart: metallb/metallb
+    version: 0.14.5
+    values: [values/metallb.yaml.gotmpl]
+
+  - name: longhorn
+    namespace: longhorn-system
+    chart: longhorn/longhorn
+    version: 1.6.1
+    values: [values/longhorn.yaml]
+
+  - name: pihole
+    namespace: pihole
+    chart: mojo2600/pihole
+    version: 2.22.0
+    needs: [metallb, longhorn]
+    values:
+      - values/pihole.yaml.gotmpl
+      - secrets/app.sops.yaml
+
+  - name: homebridge
+    namespace: homebridge
+    chart: homebridge/homebridge
+    version: 1.0.0
+    needs: [metallb, longhorn]
+    values:
+      - values/homebridge.yaml.gotmpl
+
+  - name: tailscale
+    namespace: tailscale
+    chart: tailscale/tailscale
+    version: 1.42.0
+    needs: [metallb]
+    values:
+      - values/tailscale.yaml.gotmpl
+      - secrets/app.sops.yaml

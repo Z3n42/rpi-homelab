@@ -1,0 +1,25 @@
+replicaCount: 3
+serviceTCP:
+  loadBalancerIP: {{ requiredEnv "PIHOLE_IP" }}
+  type: LoadBalancer
+serviceUDP:
+  loadBalancerIP: {{ requiredEnv "PIHOLE_IP" }}
+  type: LoadBalancer
+persistentVolumeClaim:
+  enabled: true
+  storageClass: longhorn
+  accessModes: [ReadWriteMany]
+  size: 2Gi
+dnsmasq:
+  upstreamServers:
+    - 127.0.0.1#5335
+extraContainers:
+  - name: unbound
+    image: mvance/unbound:latest
+    ports:
+      - containerPort: 5335
+        protocol: UDP
+        name: dns-udp
+      - containerPort: 5335
+        protocol: TCP
+        name: dns-tcp

@@ -1,0 +1,4 @@
+key.txt
+*.dec.yaml
+secrets/temp.yaml
+.DS_Store

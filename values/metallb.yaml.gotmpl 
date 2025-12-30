@@ -1,0 +1,8 @@
+configInline:
+  address-pools:
+   - name: default
+     protocol: layer2
+     addresses:
+     - '{{ requiredEnv "PIHOLE_IP" }}-{{ requiredEnv "PIHOLE_IP" }}'
+     - '{{ requiredEnv "HOMEBRIDGE_IP" }}-{{ requiredEnv "HOMEBRIDGE_IP" }}'
+     - '{{ requiredEnv "TAILSCALE_IP" }}-{{ requiredEnv "TAILSCALE_IP" }}'
