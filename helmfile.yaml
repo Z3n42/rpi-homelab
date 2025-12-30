@@ -27,7 +27,9 @@ releases:
     namespace: pihole
     chart: mojo2600/pihole
     version: 2.22.0
-    needs: [metallb, longhorn]
+    needs:
+      - metallb-system/metallb
+      - longhorn-system/longhorn
     values:
       - values/pihole.yaml.gotmpl
       - secrets/app.sops.yaml
@@ -36,7 +38,9 @@ releases:
     namespace: homebridge
     chart: bjw-s/app-template
     version: 3.2.1
-    needs: [metallb, longhorn]
+    needs:
+      - metallb-system/metallb
+      - longhorn-system/longhorn
     createNamespace: true
     values:
       - controllers:
@@ -71,7 +75,8 @@ releases:
     namespace: tailscale
     chart: tailscale/tailscale
     version: 1.42.0
-    needs: [metallb]
+    needs:
+      - metallb-system/metallb
     values:
       - values/tailscale.yaml.gotmpl
       - secrets/app.sops.yaml
