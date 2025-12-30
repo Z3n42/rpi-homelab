@@ -55,7 +55,7 @@ jobs:
           
           echo "Applying Helmfile configuration..." | tee -a $LOGFILE
           
-          helmfile --helm-secrets apply 2>&1 | tee -a $LOGFILE
+          helmfile apply 2>&1 | tee -a $LOGFILE
           
           STATUS=$?
           
