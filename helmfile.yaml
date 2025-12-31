@@ -37,24 +37,14 @@ releases:
     chart: longhorn/longhorn
     values: [values/longhorn.yaml]
 
-  - name: pihole
-    namespace: pihole
-    chart: mojo2600/pihole
-    needs:
-      - metallb-system/metallb
-      - longhorn-system/longhorn
-    secrets:
-      - secrets/app.sops.yaml
-    values:
-      - values/pihole.yaml.gotmpl
-  
   - name: unbound
     namespace: pihole
     chart: bjw-s/app-template
+    needs: [metallb-system/metallb]
     values:
       - controllers:
           main:
-            replicas: 2
+            replicas: 1
             containers:
               main:
                 image:
@@ -80,6 +70,61 @@ releases:
                 port: 5335
                 protocol: TCP
 
+  - name: pihole
+    namespace: pihole
+    chart: mojo2600/pihole
+    needs:
+      - metallb-system/metallb
+      - longhorn-system/longhorn
+      - pihole/unbound
+    secrets:
+      - secrets/app.sops.yaml
+    values:
+      - values/pihole.yaml.gotmpl
+
+  - name: pihole-services
+    namespace: pihole
+    chart: bedag/raw
+    needs: [pihole/pihole]
+    values:
+      - |
+        apiVersion: v1
+        kind: Service
+        meta
+          name: pihole-dns-tcp
+          namespace: pihole
+          labels:
+            app.kubernetes.io/name: pihole
+        spec:
+          type: LoadBalancer
+          loadBalancerIP: {{ .Values.network.services.pihole.ip }}
+          externalTrafficPolicy: Local
+          selector:
+            app.kubernetes.io/name: pihole
+          ports:
+            - name: dns-tcp
+              port: 53
+              targetPort: 53
+              protocol: TCP
+        ---
+        apiVersion: v1
+        kind: Service
+        meta
+          name: pihole-dns-udp
+          namespace: pihole
+          labels:
+            app.kubernetes.io/name: pihole
+        spec:
+          type: LoadBalancer
+          loadBalancerIP: {{ .Values.network.services.pihole.ip }}
+          externalTrafficPolicy: Local
+          selector:
+            app.kubernetes.io/name: pihole
+          ports:
+            - name: dns-udp
+              port: 53
+              targetPort: 53
+              protocol: UDP
 
   - name: homebridge
     namespace: homebridge
