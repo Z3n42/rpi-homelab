@@ -2,19 +2,29 @@ resources:
   - apiVersion: metallb.io/v1beta1
     kind: IPAddressPool
     metadata:
-      name: default-pool
+      name: pihole-pool
       namespace: metallb-system
     spec:
       addresses:
       - "{{ .Values.network.services.pihole.ip }}/32"
-      - "{{ .Values.network.services.homebridge.ip }}/32"
-      - "{{ .Values.network.metallb.range }}"
+      autoAssign: false
+
+  - apiVersion: metallb.io/v1beta1
+    kind: IPAddressPool
+    metadata:
+      name: default-pool
+      namespace: metallb-system
+    spec:
+      addresses:
+      - 192.168.1.60-192.168.1.80
+      autoAssign: true
 
   - apiVersion: metallb.io/v1beta1
     kind: L2Advertisement
     metadata:
-      name: default-l2
+      name: l2-global
       namespace: metallb-system
     spec:
       ipAddressPools:
+      - pihole-pool
       - default-pool
