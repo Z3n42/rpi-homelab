@@ -23,13 +23,11 @@ releases:
   - name: metallb
     namespace: metallb-system
     chart: metallb/metallb
-    version: 0.14.5
     values: [values/metallb.yaml.gotmpl]
 
   - name: metallb-config
     namespace: metallb-system
     chart: bedag/raw
-    version: 2.0.0
     needs: [metallb-system/metallb]
     values:
       - values/metallb-config.yaml.gotmpl
@@ -37,13 +35,11 @@ releases:
   - name: longhorn
     namespace: longhorn-system
     chart: longhorn/longhorn
-    version: 1.6.1
     values: [values/longhorn.yaml]
 
   - name: pihole
     namespace: pihole
     chart: mojo2600/pihole
-    version: 2.22.0
     needs:
       - metallb-system/metallb
       - longhorn-system/longhorn
@@ -55,7 +51,6 @@ releases:
   - name: homebridge
     namespace: homebridge
     chart: bjw-s/app-template
-    version: 3.2.1
     needs:
       - metallb-system/metallb
       - longhorn-system/longhorn
@@ -92,7 +87,6 @@ releases:
   - name: tailscale
     namespace: tailscale
     chart: tailscale/tailscale
-    version: 1.42.0
     needs:
       - metallb-system/metallb
     secrets:
