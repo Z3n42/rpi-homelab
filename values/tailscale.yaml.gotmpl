@@ -1,7 +1,15 @@
-# DEBUG INFO
-debug_keys: {{ keys .Values | toString }}
+# DEBUG DIAGNOSTIC
+keys_found: {{ keys .Values | toString }}
 
 oauth:
   enabled: false
 hostname: "rpi-cluster"
-preauthKey: {{ index .Values "tailscale" "authKey" | default "CLAVE_NO_ENCONTRADA" }}
+
+preauthKey: >-
+  {{- if .Values.tailscale -}}
+    {{- .Values.tailscale.authKey -}}
+  {{- else if .Values.authKey -}}
+    {{- .Values.authKey -}}
+  {{- else -}}
+    "ERROR_CLAVE_NO_ENCONTRADA"
+  {{- end -}}
