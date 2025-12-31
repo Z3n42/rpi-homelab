@@ -94,3 +94,5 @@ releases:
     values:
       - operatorConfig:
           logging: "info"
+          defaultTags:
+            - tag:server

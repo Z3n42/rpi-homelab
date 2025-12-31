@@ -1,25 +1,58 @@
-replicaCount: 3
+replicaCount: 2
 serviceTCP:
   loadBalancerIP: {{ .Values.network.services.pihole.ip }}
   type: LoadBalancer
+  externalTrafficPolicy: Local
 serviceUDP:
   loadBalancerIP: {{ .Values.network.services.pihole.ip }}
   type: LoadBalancer
+  externalTrafficPolicy: Local
+
+serviceWeb:
+  type: ClusterIP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800
+
 persistentVolumeClaim:
   enabled: true
   storageClass: longhorn
-  accessModes: [ReadWriteMany]
+  accessModes:
+    - ReadWriteMany
   size: 2Gi
-dnsmasq:
-  upstreamServers:
-    - 127.0.0.1#5335
+
+pihole:
+  dns:
+    upstreams:
+      - 127.0.0.1#5335
+probes:
+  liveness:
+    initialDelaySeconds: 120
+    timeoutSeconds: 5
+    failureThreshold: 10
+  readiness:
+    initialDelaySeconds: 60
+    timeoutSeconds: 5
+    failureThreshold: 5
 extraContainers:
   - name: unbound
     image: klutchell/unbound:latest
+    imagePullPolicy: IfNotPresent
     ports:
-      - containerPort: 5335
-        protocol: UDP
-        name: dns-udp
       - containerPort: 5335
         protocol: TCP
         name: dns-tcp
+      - containerPort: 5335
+        protocol: UDP
+        name: dns-udp
+    livenessProbe:
+      tcpSocket:
+        port: 5335
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readinessProbe:
+      tcpSocket:
+        port: 5335
+      initialDelaySeconds: 5
+      periodSeconds: 10
