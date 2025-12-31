@@ -1,11 +1,13 @@
 replicaCount: 2
+
 serviceTCP:
-  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
   type: LoadBalancer
+  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
   externalTrafficPolicy: Local
+
 serviceUDP:
-  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
   type: LoadBalancer
+  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
   externalTrafficPolicy: Local
 
 serviceWeb:
@@ -25,7 +27,7 @@ persistentVolumeClaim:
 pihole:
   dns:
     upstreams:
-      - 127.0.0.1#5335
+      - unbound-main.pihole.svc.cluster.local#5335
 probes:
   liveness:
     initialDelaySeconds: 120
@@ -35,26 +37,5 @@ probes:
     initialDelaySeconds: 60
     timeoutSeconds: 5
     failureThreshold: 5
-extraContainers:
-  - name: unbound
-    image: klutchell/unbound:latest
-    imagePullPolicy: IfNotPresent
-    command: ["/usr/sbin/unbound"]
-    args: ["-d", "-p", "-c", "/etc/unbound/unbound.conf", "-vv"]
-    env: 
-      - name: UNBOUND_PORT
-        value: "5335"
-      - name: TZ
-        value: "Europe/Madrid"
-    ports:
-      - containerPort: 5335
-        protocol: TCP
-        name: unbound-tcp
-      - containerPort: 5335
-        protocol: UDP
-        name: unbound-udp
-    livenessProbe:
-      tcpSocket:
-        port: 5335
-      initialDelaySeconds: 30
-      periodSeconds: 10
+
+extraContainers: []

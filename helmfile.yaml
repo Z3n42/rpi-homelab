@@ -47,6 +47,39 @@ releases:
       - secrets/app.sops.yaml
     values:
       - values/pihole.yaml.gotmpl
+  
+  - name: unbound
+    namespace: pihole
+    chart: bjw-s/app-template
+    values:
+      - controllers:
+          main:
+            replicas: 2
+            containers:
+              main:
+                image:
+                  repository: klutchell/unbound
+                  tag: latest
+                env:
+                  TZ: Europe/Madrid
+                ports:
+                  - name: dns
+                    containerPort: 5335
+                    protocol: UDP
+                  - name: dns-tcp
+                    containerPort: 5335
+                    protocol: TCP
+      - service:
+          main:
+            type: ClusterIP
+            ports:
+              dns:
+                port: 5335
+                protocol: UDP
+              dns-tcp:
+                port: 5335
+                protocol: TCP
+
 
   - name: homebridge
     namespace: homebridge
