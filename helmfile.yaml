@@ -85,7 +85,7 @@ releases:
 
   - name: tailscale
     namespace: tailscale
-    chart: tailscale/tailscale
+    chart: tailscale/tailscale-operator
     needs:
       - metallb-system/metallb
     values:
