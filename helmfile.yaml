@@ -87,44 +87,7 @@ releases:
     chart: bedag/raw
     needs: [pihole/pihole]
     values:
-      - |
-        apiVersion: v1
-        kind: Service
-        meta
-          name: pihole-dns-tcp
-          namespace: pihole
-          labels:
-            app.kubernetes.io/name: pihole
-        spec:
-          type: LoadBalancer
-          loadBalancerIP: {{ .Values.network.services.pihole.ip }}
-          externalTrafficPolicy: Local
-          selector:
-            app.kubernetes.io/name: pihole
-          ports:
-            - name: dns-tcp
-              port: 53
-              targetPort: 53
-              protocol: TCP
-        ---
-        apiVersion: v1
-        kind: Service
-        meta
-          name: pihole-dns-udp
-          namespace: pihole
-          labels:
-            app.kubernetes.io/name: pihole
-        spec:
-          type: LoadBalancer
-          loadBalancerIP: {{ .Values.network.services.pihole.ip }}
-          externalTrafficPolicy: Local
-          selector:
-            app.kubernetes.io/name: pihole
-          ports:
-            - name: dns-udp
-              port: 53
-              targetPort: 53
-              protocol: UDP
+      - values/pihole-services.yaml.gotmpl
 
   - name: homebridge
     namespace: homebridge
