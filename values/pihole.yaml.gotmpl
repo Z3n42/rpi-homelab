@@ -1,14 +1,12 @@
 replicaCount: 2
 
 serviceTCP:
-  type: LoadBalancer
-  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
-  externalTrafficPolicy: Local
+  type: ClusterIP
+  port: 53
 
 serviceUDP:
-  type: LoadBalancer
-  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
-  externalTrafficPolicy: Local
+  type: ClusterIP
+  port: 53
 
 serviceWeb:
   type: ClusterIP
