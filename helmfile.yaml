@@ -31,8 +31,8 @@ releases:
       - metallb-system/metallb
       - longhorn-system/longhorn
     values:
-      - values/pihole.yaml.gotmpl
       - secrets/app.sops.yaml
+      - values/pihole.yaml.gotmpl
 
   - name: homebridge
     namespace: homebridge
@@ -78,5 +78,5 @@ releases:
     needs:
       - metallb-system/metallb
     values:
-      - values/tailscale.yaml.gotmpl
       - secrets/app.sops.yaml
+      - values/tailscale.yaml.gotmpl
