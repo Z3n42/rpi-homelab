@@ -1,9 +1,9 @@
 replicaCount: 3
 serviceTCP:
-  loadBalancerIP: {{ requiredEnv "PIHOLE_IP" }}
+  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
   type: LoadBalancer
 serviceUDP:
-  loadBalancerIP: {{ requiredEnv "PIHOLE_IP" }}
+  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
   type: LoadBalancer
 persistentVolumeClaim:
   enabled: true

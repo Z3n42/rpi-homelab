@@ -9,6 +9,9 @@ repositories:
     url: https://pkgs.tailscale.com/helmcharts
   - name: bjw-s
     url: https://bjw-s-labs.github.io/helm-charts/
+  - name: bedag
+    url: https://bedag.github.io/helm-charts
+
 
 releases:
   - name: metallb
@@ -16,6 +19,14 @@ releases:
     chart: metallb/metallb
     version: 0.14.5
     values: [values/metallb.yaml.gotmpl]
+
+  - name: metallb-config
+    namespace: metallb-system
+    chart: bedag/raw
+    version: 2.0.0
+    needs: [metallb-system/metallb]
+    values:
+      - values/metallb-config.yaml.gotmpl
 
   - name: longhorn
     namespace: longhorn-system
@@ -80,3 +91,8 @@ releases:
     values:
       - secrets/app.sops.yaml
       - values/tailscale.yaml.gotmpl
+
+environments:
+  default:
+    values:
+      - values/network.yaml
