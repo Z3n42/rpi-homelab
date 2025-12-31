@@ -73,10 +73,7 @@ releases:
   - name: pihole
     namespace: pihole
     chart: mojo2600/pihole
-    needs:
-      - metallb
-      - longhorn
-      - unbound
+    needs: [metallb, longhorn, unbound]
     secrets:
       - secrets/app.sops.yaml
     values:
@@ -92,9 +89,7 @@ releases:
   - name: homebridge
     namespace: homebridge
     chart: bjw-s/app-template
-    needs:
-      - metallb
-      - longhorn
+    needs: [metallb, longhorn]
     createNamespace: true
     values:
       - controllers:
