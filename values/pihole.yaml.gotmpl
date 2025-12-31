@@ -15,7 +15,7 @@ dnsmasq:
     - 127.0.0.1#5335
 extraContainers:
   - name: unbound
-    image: mvance/unbound:latest
+    image: klutchell/unbound:latest
     ports:
       - containerPort: 5335
         protocol: UDP
