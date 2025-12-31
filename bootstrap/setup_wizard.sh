@@ -18,13 +18,17 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-# Detect actual user (not root) to install things correctly
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$REPO_ROOT" || { echo -e "${RED}Error: Could not change to repo root.${NC}"; exit 1; }
+
 REAL_USER=${SUDO_USER:-$(whoami)}
 REAL_HOME=$(getent passwd $REAL_USER | cut -d: -f6)
 
 echo -e "${BLUE}=================================================${NC}"
 echo -e "${BLUE}   🚀 RPI 5 HOMELAB SETUP WIZARD                 ${NC}"
 echo -e "${BLUE}      User detected: $REAL_USER ($REAL_HOME)     ${NC}"
+echo -e "${BLUE}      Working Dir: $(pwd)                        ${NC}"
 echo -e "${BLUE}=================================================${NC}"
 
 # ------------------------------------------------------------------------------
@@ -138,6 +142,7 @@ if [ "$MODE" == "1" ]; then
     # Check if we have secrets
     if [ ! -f "secrets/app.sops.yaml" ]; then
         echo -e "${RED}Error: secrets/app.sops.yaml not found. Did you clone the repo?${NC}"
+        echo "Current dir: $(pwd)"
         exit 1
     fi
 
