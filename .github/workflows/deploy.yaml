@@ -53,15 +53,22 @@ jobs:
           
           set -o pipefail
           
-          echo "Applying Helmfile configuration..." | tee -a $LOGFILE
+          echo "🎯 PASO 1: Bootstrap MetalLB (CRDs)..." | tee -a $LOGFILE
+          helmfile sync --selector name=metallb 2>&1 | tee -a $LOGFILE
           
-          helmfile apply 2>&1 | tee -a $LOGFILE
+          echo "✅ MetalLB CRDs instalados. Verificando..." | tee -a $LOGFILE
+          kubectl get crd | grep metallb | tee -a $LOGFILE
+          
+          echo "🎯 PASO 2: Deploy completo (Pi-hole + todo)..." | tee -a $LOGFILE
+          helmfile sync 2>&1 | tee -a $LOGFILE
           
           STATUS=$?
           
           echo "--------------------------------------------------------" | tee -a $LOGFILE
           if [ $STATUS -eq 0 ]; then
             echo "✅ SUCCESS: Deployment finished at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a $LOGFILE
+            echo "🔍 Verificando Pi-hole DNS IP..." | tee -a $LOGFILE
+            kubectl get svc -n pihole | grep LoadBalancer | tee -a $LOGFILE
           else
             echo "❌ FAILED (Exit Code: $STATUS): $(date '+%Y-%m-%d %H:%M:%S')" | tee -a $LOGFILE
             echo "Check log at $LOGFILE for details."

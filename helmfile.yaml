@@ -21,11 +21,17 @@ releases:
   - name: metallb
     namespace: metallb-system
     chart: metallb/metallb
+    hooks:
+      - events: [postsync]
+        showlogs: true
+        command: "kubectl"
+        args: ["wait", "--namespace", "metallb-system", "--for=condition=ready", "pod", "--selector=app.kubernetes.io/name=metallb", "--timeout=90s"]
     values: [values/metallb.yaml.gotmpl]
 
   - name: metallb-config
     namespace: metallb-system
     chart: bedag/raw
+    needs: [metallb-system/metallb]
     values:
       - values/metallb-config.yaml.gotmpl
 
