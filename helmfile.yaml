@@ -43,8 +43,9 @@ releases:
     needs:
       - metallb-system/metallb
       - longhorn-system/longhorn
-    values:
+    secrets:
       - secrets/app.sops.yaml
+    values:
       - values/pihole.yaml.gotmpl
 
   - name: homebridge
@@ -88,6 +89,8 @@ releases:
     chart: tailscale/tailscale-operator
     needs:
       - metallb-system/metallb
-    values:
+    secrets:
       - secrets/app.sops.yaml
-      - values/tailscale.yaml.gotmpl
+    values:
+      - operatorConfig:
+          logging: "info"
