@@ -5,4 +5,11 @@ oauth:
   enabled: false
 hostname: "rpi-cluster"
 
-preauthKey: {{ ((.Values | get "tailscale" dict) | get "authKey") | default .Values.authKey | default "ERROR_DEBUG_MODE" }}
+preauthKey: >-
+  {{- if hasKey .Values "tailscale" -}}
+    {{- index .Values.tailscale "authKey" -}}
+  {{- else if hasKey .Values "authKey" -}}
+    {{- .Values.authKey -}}
+  {{- else -}}
+    "CLAVE_NO_ENCONTRADA_REVISAR_DEBUG_KEYS"
+  {{- end -}}

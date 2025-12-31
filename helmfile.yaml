@@ -98,4 +98,5 @@ releases:
     secrets:
       - secrets/app.sops.yaml
     values:
+      - {{ exec "sops" (list "-d" "--output-type" "yaml" "secrets/app.sops.yaml") | fromYaml | toYaml }}
       - values/tailscale.yaml.gotmpl
