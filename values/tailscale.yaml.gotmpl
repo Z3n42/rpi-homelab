@@ -1,15 +1,6 @@
-# DEBUG DIAGNOSTIC
-debug_keys_found: {{ keys .Values | toString }}
-
 oauth:
-  enabled: false
-hostname: "rpi-cluster"
+  clientId: {{ .Values.tailscale.oauth.clientId }}
+  clientSecret: {{ .Values.tailscale.oauth.clientSecret }}
 
-preauthKey: >-
-  {{- if hasKey .Values "tailscale" -}}
-    {{- index .Values.tailscale "authKey" -}}
-  {{- else if hasKey .Values "authKey" -}}
-    {{- .Values.authKey -}}
-  {{- else -}}
-    "CLAVE_NO_ENCONTRADA_REVISAR_DEBUG_KEYS"
-  {{- end -}}
+operatorConfig:
+  logging: "info"
