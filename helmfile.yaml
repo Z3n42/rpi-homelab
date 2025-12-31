@@ -17,29 +17,15 @@ environments:
     values:
       - values/network.yaml
 
----
-
 releases:
   - name: metallb
     namespace: metallb-system
     chart: metallb/metallb
-    hooks:
-      - events: [postsync]
-        name: "wait-for-metallb-crds"
-        showlogs: true
-        command: "kubectl"
-        args:
-          - "wait"
-          - "--for=condition=Available"
-          - "deployment/metallb-controller"
-          - "--namespace=metallb-system"
-          - "--timeout=120s"
     values: [values/metallb.yaml.gotmpl]
 
   - name: metallb-config
     namespace: metallb-system
     chart: bedag/raw
-    needs: [metallb-system/metallb]
     values:
       - values/metallb-config.yaml.gotmpl
 
