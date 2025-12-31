@@ -17,6 +17,8 @@ environments:
     values:
       - values/network.yaml
 
+---
+
 releases:
   - name: metallb
     namespace: metallb-system
