@@ -10,6 +10,7 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
 NC='\033[0m'
+YELLOW='\033[1;33m'
 
 # Check Root
 if [ "$EUID" -ne 0 ]; then 
@@ -113,14 +114,19 @@ else
     chmod 600 $KEY_FILE
 fi
 
+if ! grep -q "SOPS_AGE_KEY_FILE" "$REAL_HOME/.bashrc"; then
+    echo "    - Adding env var to .bashrc..."
+    echo "export SOPS_AGE_KEY_FILE=$KEY_FILE" >> "$REAL_HOME/.bashrc"
+fi
+
 # ------------------------------------------------------------------------------
 # PHASE 3: DEPLOYMENT MODE
 # ------------------------------------------------------------------------------
 echo -e "\n${BLUE}=================================================${NC}"
 echo -e "${BLUE}   CHOOSE DEPLOYMENT MODE                        ${NC}"
 echo -e "${BLUE}=================================================${NC}"
-echo "1) LOCAL DEPLOY (I want to run everything NOW from this RPi)"
-echo "2) GITOPS RUNNER (I want to connect to GitHub and deploy via git push)"
+echo "1) LOCAL DEPLOY (Safe to run anytime - Updates apps instantly)"
+echo -e "2) GITOPS RUNNER ${YELLOW}(WARNING: REINSTALLS RUNNER! Requires new GitHub Token)${NC}"
 echo ""
 read -p "Select option [1 or 2]: " MODE
 
@@ -142,6 +148,7 @@ if [ "$MODE" == "1" ]; then
 elif [ "$MODE" == "2" ]; then
     # --- OPTION 2: GITOPS RUNNER ---
     echo -e "\n${GREEN}--> [GitOps Mode] Setting up GitHub Runner...${NC}"
+    echo -e "${YELLOW}⚠️  This will REMOVE any existing runner configuration.${NC}"
     echo "Need RUNNER TOKEN from: Repo Settings -> Actions -> Runners -> New Self-Hosted Runner"
     echo ""
     read -p "🔹 GitHub Repo URL: " REPO_URL
