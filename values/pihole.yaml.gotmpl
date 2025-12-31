@@ -39,6 +39,13 @@ extraContainers:
   - name: unbound
     image: klutchell/unbound:latest
     imagePullPolicy: IfNotPresent
+    command: ["/usr/sbin/unbound"]
+    args: ["-d", "-p", "-c", "/etc/unbound/unbound.conf", "-vv"]
+    env: 
+      - name: UNBOUND_PORT
+        value: "5335"
+      - name: TZ
+        value: "Europe/Madrid"
     ports:
       - containerPort: 5335
         protocol: TCP
@@ -49,10 +56,5 @@ extraContainers:
     livenessProbe:
       tcpSocket:
         port: 5335
-      initialDelaySeconds: 10
-      periodSeconds: 10
-    readinessProbe:
-      tcpSocket:
-        port: 5335
-      initialDelaySeconds: 5
+      initialDelaySeconds: 30
       periodSeconds: 10
