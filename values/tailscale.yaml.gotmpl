@@ -1,4 +1,7 @@
+# DEBUG INFO
+debug_keys: {{ keys .Values | toString }}
+
 oauth:
   enabled: false
 hostname: "rpi-cluster"
-preauthKey: {{ .Values.tailscale.authKey }}
+preauthKey: {{ index .Values "tailscale" "authKey" | default "CLAVE_NO_ENCONTRADA" }}
