@@ -28,8 +28,6 @@ releases:
   - name: metallb-config
     namespace: metallb-system
     chart: bedag/raw
-    needs: [metallb-system/metallb]
-    wait: true
     values:
       - values/metallb-config.yaml.gotmpl
 
