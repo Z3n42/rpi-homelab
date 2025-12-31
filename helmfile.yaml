@@ -17,8 +17,6 @@ environments:
     values:
       - values/network.yaml
 
----
-
 releases:
   - name: metallb
     namespace: metallb-system
@@ -28,7 +26,7 @@ releases:
   - name: metallb-config
     namespace: metallb-system
     chart: bedag/raw
-    needs: [metallb-system/metallb]
+    needs: [metallb]
     values:
       - values/metallb-config.yaml.gotmpl
 
@@ -40,7 +38,7 @@ releases:
   - name: unbound
     namespace: pihole
     chart: bjw-s/app-template
-    needs: [metallb-system/metallb]
+    needs: [metallb]
     values:
       - controllers:
           main:
@@ -74,9 +72,9 @@ releases:
     namespace: pihole
     chart: mojo2600/pihole
     needs:
-      - metallb-system/metallb
-      - longhorn-system/longhorn
-      - pihole/unbound
+      - metallb
+      - longhorn
+      - unbound
     secrets:
       - secrets/app.sops.yaml
     values:
@@ -85,7 +83,7 @@ releases:
   - name: pihole-services
     namespace: pihole
     chart: bedag/raw
-    needs: [pihole/pihole]
+    needs: [pihole]
     values:
       - values/pihole-services.yaml.gotmpl
 
@@ -93,8 +91,8 @@ releases:
     namespace: homebridge
     chart: bjw-s/app-template
     needs:
-      - metallb-system/metallb
-      - longhorn-system/longhorn
+      - metallb
+      - longhorn
     createNamespace: true
     values:
       - controllers:
@@ -128,8 +126,7 @@ releases:
   - name: tailscale
     namespace: tailscale
     chart: tailscale/tailscale-operator
-    needs:
-      - metallb-system/metallb
+    needs: [metallb]
     secrets:
       - secrets/app.sops.yaml
     values:
