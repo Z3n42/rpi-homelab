@@ -42,10 +42,10 @@ extraContainers:
     ports:
       - containerPort: 5335
         protocol: TCP
-        name: dns-tcp
+        name: unbound-tcp
       - containerPort: 5335
         protocol: UDP
-        name: dns-udp
+        name: unbound-udp
     livenessProbe:
       tcpSocket:
         port: 5335
