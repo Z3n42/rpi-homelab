@@ -12,6 +12,10 @@ repositories:
   - name: bedag
     url: https://bedag.github.io/helm-charts
 
+environments:
+  default:
+    values:
+      - values/network.yaml
 
 releases:
   - name: metallb
@@ -91,8 +95,3 @@ releases:
     values:
       - secrets/app.sops.yaml
       - values/tailscale.yaml.gotmpl
-
-environments:
-  default:
-    values:
-      - values/network.yaml
