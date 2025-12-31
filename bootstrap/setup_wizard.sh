@@ -147,7 +147,7 @@ if [ "$MODE" == "1" ]; then
     fi
 
     echo -e "\n${GREEN}--> 🚀 Deploying...${NC}"
-    helmfile --helm-secrets apply
+    helmfile apply
     echo -e "${GREEN}✅ Done! Check your services.${NC}"
 
 elif [ "$MODE" == "2" ]; then
