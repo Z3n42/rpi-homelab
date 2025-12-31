@@ -82,9 +82,12 @@ fi
 if ! command -v helm &> /dev/null; then
     echo "    - Installing Helm..."
     curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-    # Install Secrets Plugin as user
-    sudo -u $REAL_USER helm plugin install https://github.com/jkroepke/helm-secrets > /dev/null 2>&1
 fi
+
+echo "    - Checking Helm Plugins for $REAL_USER..."
+sudo -u $REAL_USER helm plugin install https://github.com/jkroepke/helm-secrets > /dev/null 2>&1 || true
+sudo -u $REAL_USER helm plugin install https://github.com/databus23/helm-diff > /dev/null 2>&1 || true
+
 
 # Install Helmfile & SOPS (Declarative Deployments)
 if ! command -v helmfile &> /dev/null; then
@@ -147,8 +150,13 @@ if [ "$MODE" == "1" ]; then
     fi
 
     echo -e "\n${GREEN}--> 🚀 Deploying...${NC}"
-    helmfile apply
-    echo -e "${GREEN}✅ Done! Check your services.${NC}"
+    sudo -u $REAL_USER SOPS_AGE_KEY_FILE=$KEY_FILE helmfile apply
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✅ Done! Check your services.${NC}"
+    else
+        echo -e "${RED}❌ Deployment failed. Check the logs above.${NC}"
+    fi
 
 elif [ "$MODE" == "2" ]; then
     # --- OPTION 2: GITOPS RUNNER ---
@@ -167,7 +175,9 @@ elif [ "$MODE" == "2" ]; then
     # 2. Prepare Directory
     if [ -d "$RUNNER_DIR" ]; then
         echo "    - Cleaning previous runner installation..."
+        cd "$RUNNER_DIR"
         sudo ./svc.sh uninstall > /dev/null 2>&1
+        cd "$REPO_ROOT"
         rm -rf "$RUNNER_DIR"
     fi
     sudo -u $REAL_USER mkdir -p $RUNNER_DIR
