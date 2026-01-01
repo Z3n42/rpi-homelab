@@ -148,7 +148,7 @@ releases:
   - name: pihole-manifests
     namespace: pihole
     chart: bedag/raw
-    needs: [pihole/pihole, traefik-system/traefik, traefik-system/traefik-crds]
+    needs: [pihole/pihole, traefik-system/traefik]
     values:
       - values/pihole-manifests.yaml.gotmpl
 
