@@ -83,52 +83,108 @@ releases:
     secrets:
       - secrets/app.sops.yaml
     values:
-      - values/pihole.yaml.gotmpl
+      - values/pihole.yaml.gotmpl  # Solo probes, persistence, etc. SIN services
     hooks:
-    - events: [postsync]
-      name: "pihole-repair-gravity"
-      showlogs: true
-      command: "kubectl"
-      args:
-        - "exec"
-        - "-n"
-        - "pihole"
-        - "deployment/pihole"
-        - "--"
-        - "bash"
-        - "-c"
-        - |
-          echo "🔧 Repairing Pi-hole gravity database..."
-          pihole -g && pihole restartdns && echo "✅ Gravity repair complete!"
-    - events: [postsync]
-      name: "pihole-healthcheck"
-      showlogs: true
-      command: "kubectl"
-      args:
-        - "wait"
-        - "-n"
-        - "pihole"
-        - "--for=condition=Available"
-        - "deployment/pihole"
-        - "--timeout=120s"
-    - events: [postsync]
-      name: "pihole-config-upstreams"
-      showlogs: true
-      command: "kubectl"
-      args:
-        - "exec"
-        - "-n"
-        - "pihole"
-        - "deployment/pihole"
-        - "--"
-        - "pihole"
-        - "-a"
-        - "-c"
-        - |
-          sqlite3 /etc/pihole/gravity.db "DELETE FROM config WHERE property='dns_upstreams';"
-          sqlite3 /etc/pihole/gravity.db "INSERT INTO config (property, value) VALUES ('dns_upstreams', 'unbound-main.pihole.svc.cluster.local#5335');"
-          pihole restartdns
-          echo "✅ Upstream DNS configurado permanentemente"
+      - events: [postsync]
+        name: "pihole-repair-gravity"
+        showlogs: true
+        command: "kubectl"
+        args:
+          - "exec"
+          - "-n"
+          - "pihole"
+          - "deployment/pihole"
+          - "--"
+          - "bash"
+          - "-c"
+          - |
+            echo "🔧 Repairing Pi-hole gravity database..."
+            pihole -g && pihole restartdns && echo "✅ Gravity repair complete!"
+      - events: [postsync]
+        name: "pihole-healthcheck"
+        showlogs: true
+        command: "kubectl"
+        args:
+          - "wait"
+          - "-n"
+          - "pihole"
+          - "--for=condition=Available"
+          - "deployment/pihole"
+          - "--timeout=120s"
+      - events: [postsync]
+        name: "pihole-config-upstreams"
+        showlogs: true
+        command: "kubectl"
+        args:
+          - "exec"
+          - "-n"
+          - "pihole"
+          - "deployment/pihole"
+          - "--"
+          - "pihole"
+          - "-a"
+          - "-c"
+          - |
+            sqlite3 /etc/pihole/gravity.db "DELETE FROM config WHERE property='dns_upstreams';"
+            sqlite3 /etc/pihole/gravity.db "INSERT INTO config (property, value) VALUES ('dns_upstreams', 'unbound-main.pihole.svc.cluster.local#5335');"
+            pihole restartdns
+            echo "✅ Upstream DNS configurado permanentemente"
+
+  - name: pihole-services-lb
+    namespace: pihole
+    chart: bedag/raw
+    needs: [pihole/pihole]
+    values:
+      - resources:
+          - apiVersion: v1
+            kind: Service
+            metadata:
+              name: pihole-dns-tcp
+            spec:
+              type: LoadBalancer
+              loadBalancerIP: {{ .Values.network.services.pihole.primary_ip }}
+              externalTrafficPolicy: Local
+              selector:
+                app.kubernetes.io/name: pihole
+              ports:
+              - name: dns-tcp
+                port: 53
+                targetPort: 53
+                protocol: TCP
+          - apiVersion: v1
+            kind: Service
+            metadata:
+              name: pihole-dns-udp
+            spec:
+              type: LoadBalancer
+              loadBalancerIP: {{ .Values.network.services.pihole.primary_ip }}
+              externalTrafficPolicy: Local
+              selector:
+                app.kubernetes.io/name: pihole
+              ports:
+              - name: dns-udp
+                port: 53
+                targetPort: 53
+                protocol: UDP
+          - apiVersion: v1
+            kind: Service
+            metadata:
+              name: pihole-web
+            spec:
+              type: LoadBalancer
+              loadBalancerIP: {{ .Values.network.services.pihole.primary_ip }}
+              externalTrafficPolicy: Local
+              selector:
+                app.kubernetes.io/name: pihole
+              ports:
+              - name: http
+                port: 80
+                targetPort: 80
+                protocol: TCP
+              - name: https
+                port: 443
+                targetPort: 443
+                protocol: TCP
 
   - name: pihole-dns-backup
     namespace: pihole
