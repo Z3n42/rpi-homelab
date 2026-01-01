@@ -144,6 +144,13 @@ releases:
                 port: 53
                 targetPort: 53
                 protocol: UDP
+  
+  - name: pihole-manifests
+    namespace: pihole
+    chart: bedag/raw
+    needs: [pihole/pihole, traefik-system/traefik]  # ← DEPENDE de ambos
+    values:
+      - values/pihole-manifests.yaml.gotmpl
 
   - name: homebridge
     namespace: homebridge

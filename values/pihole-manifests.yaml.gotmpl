@@ -1,0 +1,58 @@
+resources:
+  - apiVersion: traefik.containo.us/v1alpha1
+    kind: Middleware
+    metadata:
+      name: pihole-headers
+      namespace: pihole
+    spec:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsSeconds: 31536000
+  - apiVersion: traefik.containo.us/v1alpha1
+    kind: Middleware
+    metadata:
+      name: pihole-ratelimit
+      namespace: pihole
+    spec:
+      rateLimit:
+        average: 100
+        burst: 200
+  - apiVersion: traefik.containo.us/v1alpha1
+    kind: Middleware
+    metadata:
+      name: pihole-redirect-http
+      namespace: pihole
+    spec:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  - apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: pihole-admin-traefik
+      namespace: pihole
+      annotations:
+        traefik.ingress.kubernetes.io/router.entrypoints: websecure
+        traefik.ingress.kubernetes.io/router.tls: "true"
+        traefik.ingress.kubernetes.io/router.middlewares: 
+          pihole-headers@kubernetescrd,pihole-ratelimit@kubernetescrd,pihole-redirect-http@kubernetescrd
+    spec:
+      ingressClassName: traefik
+      rules:
+        - host: pihole.{{ .Values.network.domain }}
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: pihole-web
+                    port:
+                      number: 80
+      tls:
+        - hosts:
+            - pihole.{{ .Values.network.domain }}
+          secretName: pihole-admin-traefik-tls
