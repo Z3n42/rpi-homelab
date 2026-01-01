@@ -83,8 +83,19 @@ releases:
     secrets:
       - secrets/app.sops.yaml
     values:
-      - values/pihole.yaml.gotmpl  # Solo probes, persistence, etc. SIN services
+      - values/pihole.yaml.gotmpl
     hooks:
+      - events: [postsync]
+        name: "pihole-healthcheck"
+        showlogs: true
+        command: "kubectl"
+        args:
+          - "wait"
+          - "-n"
+          - "pihole"
+          - "--for=condition=Available"
+          - "deployment/pihole"
+          - "--timeout=180s"
       - events: [postsync]
         name: "pihole-repair-gravity"
         showlogs: true
@@ -100,17 +111,6 @@ releases:
           - |
             echo "🔧 Repairing Pi-hole gravity database..."
             pihole -g && pihole restartdns && echo "✅ Gravity repair complete!"
-      - events: [postsync]
-        name: "pihole-healthcheck"
-        showlogs: true
-        command: "kubectl"
-        args:
-          - "wait"
-          - "-n"
-          - "pihole"
-          - "--for=condition=Available"
-          - "deployment/pihole"
-          - "--timeout=120s"
       - events: [postsync]
         name: "pihole-config-upstreams"
         showlogs: true
