@@ -46,6 +46,11 @@ releases:
     chart: longhorn/longhorn
     values: [values/longhorn.yaml]
 
+  - name: traefik-crds
+    namespace: traefik-system
+    chart: traefik/traefik-crds
+    version: "1.0.0"
+
   - name: traefik
     namespace: traefik-system
     createNamespace: true
