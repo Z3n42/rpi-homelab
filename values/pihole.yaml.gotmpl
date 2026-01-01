@@ -22,25 +22,20 @@ pihole:
 
 serviceDns:
   type: LoadBalancer
-  loadBalancerIP: "{{ .Values.network.services.pihole.primary_ip }}"
-  externalTrafficPolicy: Local
-  annotations:
-    metallb.universe.tf/allow-shared-ip: "pihole-key"
-  port: 53
-  targetPort: 53 
-
-serviceWeb:
-  type: LoadBalancer
   loadBalancerIP: "{{ .Values.network.services.pihole.primary_ip }}" 
-  externalTrafficPolicy: Local
-  annotations:
-    metallb.universe.tf/allow-shared-ip: "pihole-key"
-  http:
-    enabled: true
-    port: 80
-  https:
-    enabled: true
-    port: 443
+  ports:
+    - name: dns-tcp
+      port: 53
+      protocol: TCP
+    - name: dns-udp  
+      port: 53
+      protocol: UDP
+    - name: http
+      port: 80
+      protocol: TCP
+    - name: https
+      port: 443
+      protocol: TCP
 
 probes:
   liveness:
