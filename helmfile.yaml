@@ -54,7 +54,6 @@ releases:
     createNamespace: true
     chart: traefik/traefik
     version: "28.1.0"
-    installCRDs: true
     needs: [metallb-system/metallb-config] 
     values:
       - providers:
