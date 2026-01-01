@@ -63,7 +63,20 @@ fi
 # PHASE 1: INSTALL DEPENDENCIES
 # ------------------------------------------------------------------------------
 echo -e "\n${GREEN}--> [1/5] Installing System Dependencies...${NC}"
+
+# Install packages
 apt update -qq && apt install -y curl wget git htop vim open-iscsi nfs-common age jq > /dev/null
+
+# ENABLE & START CRITICAL STORAGE SERVICES (Longhorn needs these!)
+echo "    - Enabling storage services (iSCSI/NFS)..."
+systemctl enable --now iscsid
+systemctl enable --now rpcbind  # Necesario para NFS
+systemctl enable --now nfs-client.target # En algunos sistemas se llama así, en otros es nfs-common
+
+# Verify connection
+if ! systemctl is-active --quiet iscsid; then
+    echo -e "${YELLOW}⚠️  Warning: iSCSI service is not active. Longhorn might complain.${NC}"
+fi
 
 # Install K3s (Lightweight Kubernetes)
 if ! command -v k3s &> /dev/null; then

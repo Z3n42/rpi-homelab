@@ -24,7 +24,11 @@ serviceUDP:
     metallb.universe.tf/allow-shared-ip: "pihole-svc"
 
 serviceWeb:
-  type: ClusterIP 
+  type: LoadBalancer
+  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
+  externalTrafficPolicy: Local
+  annotations:
+    metallb.universe.tf/allow-shared-ip: "pihole-svc"
 
 serviceDhcp:
   enabled: false
