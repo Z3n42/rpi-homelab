@@ -20,14 +20,26 @@ pihole:
   IPv6: "True"
   DNSSEC: "false"
 
+serviceDnsTcp:
+  enabled: false
+serviceDnsUdp:
+  enabled: false
+serviceWeb:
+  enabled: false
+serviceDnsBackup:
+  enabled: false
+
 serviceDns:
+  enabled: true
+  mixedService: true
   type: LoadBalancer
-  loadBalancerIP: "{{ .Values.network.services.pihole.primary_ip }}" 
+  loadBalancerIP: "{{ .Values.network.services.pihole.primary_ip }}"
+  externalTrafficPolicy: Local
   ports:
     - name: dns-tcp
       port: 53
       protocol: TCP
-    - name: dns-udp  
+    - name: dns-udp
       port: 53
       protocol: UDP
     - name: http
