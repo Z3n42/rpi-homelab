@@ -135,8 +135,7 @@ releases:
     chart: bedag/raw
     needs: [pihole/pihole]
     values:
-      - |
-        resources:
+      - resources:
           - apiVersion: v1
             kind: Service
             metadata:
@@ -146,6 +145,7 @@ releases:
               loadBalancerIP: {{ .Values.network.services.pihole.backup_ip }}
               selector:
                 app.kubernetes.io/name: pihole
+                app.kubernetes.io/instance: pihole
               ports:
               - name: dns-tcp-backup
                 port: 53
