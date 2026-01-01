@@ -11,9 +11,11 @@ persistentVolumeClaim:
   size: 2Gi
 
 pihole:
-  dns:
-    upstreams:
-      - unbound-main.pihole.svc.cluster.local#5335
+  dns1: "unbound-main.pihole.svc.cluster.local"
+  dns2: "no"
+  dnsmasq:
+    upstreamServers:
+      - "server=unbound-main.pihole.svc.cluster.local#5335"
 
 probes:
   liveness:

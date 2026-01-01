@@ -76,59 +76,9 @@ releases:
   - name: pihole
     namespace: pihole
     chart: mojo2600/pihole
-    needs: 
-      - metallb-system/metallb
-      - longhorn-system/longhorn
-      - pihole/unbound
-    secrets:
-      - secrets/app.sops.yaml
-    values:
-      - values/pihole.yaml.gotmpl
-    hooks:
-      - events: [postsync]
-        name: "pihole-healthcheck"
-        showlogs: true
-        command: "kubectl"
-        args:
-          - "wait"
-          - "-n"
-          - "pihole"
-          - "--for=condition=Available"
-          - "deployment/pihole"
-          - "--timeout=180s"
-      - events: [postsync]
-        name: "pihole-repair-gravity"
-        showlogs: true
-        command: "kubectl"
-        args:
-          - "exec"
-          - "-n"
-          - "pihole"
-          - "deployment/pihole"
-          - "--"
-          - "bash"
-          - "-c"
-          - |
-            echo "🔧 Repairing Pi-hole gravity database..."
-            pihole -g && pihole restartdns && echo "✅ Gravity repair complete!"
-      - events: [postsync]
-        name: "pihole-config-upstreams"
-        showlogs: true
-        command: "kubectl"
-        args:
-          - "exec"
-          - "-n"
-          - "pihole"
-          - "deployment/pihole"
-          - "--"
-          - "pihole"
-          - "-a"
-          - "-c"
-          - |
-            sqlite3 /etc/pihole/gravity.db "DELETE FROM config WHERE property='dns_upstreams';"
-            sqlite3 /etc/pihole/gravity.db "INSERT INTO config (property, value) VALUES ('dns_upstreams', 'unbound-main.pihole.svc.cluster.local#5335');"
-            pihole restartdns
-            echo "✅ Upstream DNS configurado permanentemente"
+    needs: [metallb-system/metallb, longhorn-system/longhorn, pihole/unbound]
+    secrets: [secrets/app.sops.yaml]
+    values: [values/pihole.yaml.gotmpl]
 
   - name: pihole-services-lb
     namespace: pihole
