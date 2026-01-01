@@ -17,7 +17,7 @@ resources:
       namespace: metallb-system
     spec:
       addresses:
-      - {{ .Values.network.metallb.range }}
+      - "{{ .Values.network.metallb.range }}"
       autoAssign: true
 
   - apiVersion: metallb.io/v1beta1
