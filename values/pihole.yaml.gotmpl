@@ -20,12 +20,12 @@ pihole:
   IPv6: "True"
   DNSSEC: "false"
 
-serviceDnsTcp:
-  enabled: false
-serviceDnsUdp:
-  enabled: false
-serviceWeb:
-  enabled: false
+  gravity:
+    enabled: true
+    blocklists:
+      - https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+      - https://big.oisd.nl  # 2.5M dominios
+      - https://v.firebog.net/hosts/static/w3kbl.txt
 
 serviceDns:
   enabled: true
@@ -42,9 +42,11 @@ serviceDns:
       protocol: UDP
     - name: http
       port: 80
+      targetPort: 80
       protocol: TCP
     - name: https
       port: 443
+      targetPort: 443
       protocol: TCP
 
 probes:
