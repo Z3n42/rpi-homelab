@@ -62,7 +62,7 @@ jobs:
           # ATOMIC: Rollback automático si falla
           # WAIT: Espera pods Ready
           # TIMEOUT: 5min max por release
-          helmfile sync --atomic --wait --timeout 300s 2>&1 | tee -a $LOGFILE
+          helmfile sync --reset-values --force --wait --timeout 300s --timeout 300s 2>&1 | tee -a $LOGFILE
           
           STATUS=$?
           
