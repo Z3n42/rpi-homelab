@@ -16,6 +16,9 @@ pihole:
   dnsmasq:
     upstreamServers:
       - "server=unbound-main.pihole.svc.cluster.local#5335"
+  interface: "eth0"
+  IPv6: "True"
+  DNSSEC: "false"
 
 serviceDns:
   type: LoadBalancer
