@@ -1,16 +1,23 @@
 replicaCount: 1
 
-serviceDns:
+serviceDNSPrimary:
+  enabled: true
   type: LoadBalancer
-  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
-  externalTrafficPolicy: Local
+  loadBalancerIP: {{ .Values.network.services.pihole.primary_ip }}
+  annotations:
+    metallb.universe.tf/allow-shared-ip: "pihole-svc"
+
+serviceDNSBackup:
+  enabled: true
+  type: LoadBalancer
+  loadBalancerIP: {{ .Values.network.services.pihole.backup_ip }}
   annotations:
     metallb.universe.tf/allow-shared-ip: "pihole-svc"
 
 serviceTCP:
   enabled: true
   type: LoadBalancer
-  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
+  loadBalancerIP: {{ .Values.network.services.pihole.primary_ip }}
   externalTrafficPolicy: Local
   annotations:
     metallb.universe.tf/allow-shared-ip: "pihole-svc"
@@ -18,14 +25,14 @@ serviceTCP:
 serviceUDP:
   enabled: true
   type: LoadBalancer
-  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
+  loadBalancerIP: {{ .Values.network.services.pihole.primary_ip }}
   externalTrafficPolicy: Local
   annotations:
     metallb.universe.tf/allow-shared-ip: "pihole-svc"
 
 serviceWeb:
   type: LoadBalancer
-  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
+  loadBalancerIP: {{ .Values.network.services.pihole.primary_ip }}
   externalTrafficPolicy: Local
   annotations:
     metallb.universe.tf/allow-shared-ip: "pihole-svc"

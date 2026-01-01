@@ -4,6 +4,7 @@ network:
     range: "192.168.1.60-192.168.1.80"
   services:
     pihole:
-      ip: "192.168.1.53"
+      primary_ip: "192.168.1.53"
+      backup_ip: "192.168.1.54"
     homebridge:
-      ip: "192.168.1.54"
+      ip: "192.168.1.55"  

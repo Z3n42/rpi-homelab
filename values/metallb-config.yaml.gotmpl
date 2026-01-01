@@ -7,6 +7,7 @@ resources:
     spec:
       addresses:
       - "{{ .Values.network.services.pihole.ip }}/32"
+      - "{{ .Values.network.services.pihole.backup_ip }}/32"
       autoAssign: false
 
   - apiVersion: metallb.io/v1beta1
@@ -16,7 +17,7 @@ resources:
       namespace: metallb-system
     spec:
       addresses:
-      - 192.168.1.60-192.168.1.80
+      - {{ .Values.network.metallb.range }}
       autoAssign: true
 
   - apiVersion: metallb.io/v1beta1
