@@ -17,6 +17,28 @@ pihole:
     upstreamServers:
       - "server=unbound-main.pihole.svc.cluster.local#5335"
 
+serviceDns:
+  type: LoadBalancer
+  loadBalancerIP: "{{ .Values.network.services.pihole.primary_ip }}"
+  externalTrafficPolicy: Local
+  annotations:
+    metallb.universe.tf/allow-shared-ip: "pihole-key"
+  port: 53
+  targetPort: 53 
+
+serviceWeb:
+  type: LoadBalancer
+  loadBalancerIP: "{{ .Values.network.services.pihole.primary_ip }}" 
+  externalTrafficPolicy: Local
+  annotations:
+    metallb.universe.tf/allow-shared-ip: "pihole-key"
+  http:
+    enabled: true
+    port: 80
+  https:
+    enabled: true
+    port: 443
+
 probes:
   liveness:
     initialDelaySeconds: 120
