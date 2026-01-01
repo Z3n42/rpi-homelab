@@ -84,6 +84,22 @@ releases:
       - secrets/app.sops.yaml
     values:
       - values/pihole.yaml.gotmpl
+    hooks:
+    - events: [postsync]
+      name: "pihole-repair-gravity"
+      showlogs: true
+      command: "kubectl"
+      args:
+        - "exec"
+        - "-n"
+        - "pihole"
+        - "deployment/pihole"
+        - "--"
+        - "bash"
+        - "-c"
+        - |
+          echo "🔧 Repairing Pi-hole gravity database..."
+          pihole -g && pihole restartdns && echo "✅ Gravity repair complete!"
 
   - name: homebridge
     namespace: homebridge
