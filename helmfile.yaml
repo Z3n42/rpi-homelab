@@ -18,6 +18,41 @@ environments:
       - values/network.yaml
 
 releases:
+  - name: traefik
+    namespace: traefik-system
+    createNamespace: true
+    chart: traefik/traefik
+    version: "28.1.0"
+    values:
+      - providers:
+          kubernetesCRD:
+            enabled: true
+          kubernetesIngress:
+            enabled: true
+            ingressClass:
+              enabled: true
+              isDefaultClass: true
+      - ports:
+          web:
+            port: 8000
+            exposedPort: 80
+            protocol: TCP
+          websecure:
+            port: 8443
+            exposedPort: 443
+            protocol: TCP
+      - service:
+          spec:
+            type: LoadBalancer
+            loadBalancerIP: "{{ .Values.network.services.traefik.ip }}"
+      - logs:
+          general:
+            level: INFO
+      - persistence:
+          enabled: true
+          storageClass: longhorn
+          size: 1Gi
+
   - name: metallb
     namespace: metallb-system
     chart: metallb/metallb

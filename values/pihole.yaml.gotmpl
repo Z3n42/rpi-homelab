@@ -31,6 +31,7 @@ serviceDns:
   enabled: true
   mixedService: true
   type: LoadBalancer
+  loadBalancerIP: "{{ .Values.network.services.pihole.primary_ip }}"
   ports:
     - name: dns-tcp
       port: 53
@@ -38,10 +39,6 @@ serviceDns:
     - name: dns-udp
       port: 53
       protocol: UDP
-    - name: http
-      port: 80
-      targetPort: 80
-      protocol: TCP
 
 probes:
   liveness:

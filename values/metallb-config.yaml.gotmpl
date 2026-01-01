@@ -13,6 +13,15 @@ resources:
   - apiVersion: metallb.io/v1beta1
     kind: IPAddressPool
     metadata:
+      name: traefik-pool
+    spec:
+      addresses:
+      - "{{ .Values.network.services.traefik.ip }}/32"
+      autoAssign: false
+
+  - apiVersion: metallb.io/v1beta1
+    kind: IPAddressPool
+    metadata:
       name: default-pool
       namespace: metallb-system
     spec:
@@ -28,6 +37,7 @@ resources:
     spec:
       ipAddressPools:
       - pihole-pool
+      - traefik-pool
       - default-pool
       interfaces:
       - eth0

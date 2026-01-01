@@ -10,3 +10,5 @@ network:
       backup_ip: "192.168.1.54"
     homebridge:
       ip: "192.168.1.55"
+    traefik:
+      ip: "192.168.1.50"
