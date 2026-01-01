@@ -111,6 +111,24 @@ releases:
         - "--for=condition=Available"
         - "deployment/pihole"
         - "--timeout=120s"
+    - events: [postsync]
+      name: "pihole-config-upstreams"
+      showlogs: true
+      command: "kubectl"
+      args:
+        - "exec"
+        - "-n"
+        - "pihole"
+        - "deployment/pihole"
+        - "--"
+        - "pihole"
+        - "-a"
+        - "-c"
+        - |
+          sqlite3 /etc/pihole/gravity.db "DELETE FROM config WHERE property='dns_upstreams';"
+          sqlite3 /etc/pihole/gravity.db "INSERT INTO config (property, value) VALUES ('dns_upstreams', 'unbound-main.pihole.svc.cluster.local#5335');"
+          pihole restartdns
+          echo "✅ Upstream DNS configurado permanentemente"
 
 
   - name: homebridge
