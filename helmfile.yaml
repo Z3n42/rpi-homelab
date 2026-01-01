@@ -100,6 +100,18 @@ releases:
         - |
           echo "🔧 Repairing Pi-hole gravity database..."
           pihole -g && pihole restartdns && echo "✅ Gravity repair complete!"
+    - events: [postsync]
+      name: "pihole-healthcheck"
+      showlogs: true
+      command: "kubectl"
+      args:
+        - "wait"
+        - "-n"
+        - "pihole"
+        - "--for=jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}=True'"
+        - "deployment/pihole"
+        - "--timeout=120s"
+
 
   - name: homebridge
     namespace: homebridge
