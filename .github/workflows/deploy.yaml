@@ -46,15 +46,14 @@ jobs:
           echo "📦 Traefik v3.1 CRDs (v1alpha1)..."
           kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v3.1/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1alpha1.yml
           
-          # Wait específico para Middleware
           kubectl wait --for=condition=Established \
             crd/middlewares.traefik.containo.us \
-            --timeout=60s || true
+            --timeout=60s
           
-          echo "✅ CRDs:"
-          kubectl get crd | grep traefik | wc -l
+          echo "✅ Middleware CRD:"
+          kubectl get crd middlewares.traefik.containo.us
 
-
+          
       - name: 🚀 Deploy with Helmfile
         env:
           PIHOLE_IP: "192.168.1.10"
