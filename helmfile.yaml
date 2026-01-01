@@ -130,6 +130,31 @@ releases:
           pihole restartdns
           echo "✅ Upstream DNS configurado permanentemente"
 
+  - name: pihole-dns-backup
+    namespace: pihole
+    chart: bedag/raw
+    needs: [pihole/pihole]
+    values:
+      - |
+        resources:
+          - apiVersion: v1
+            kind: Service
+            meta
+              name: pihole-dns-backup
+            spec:
+              type: LoadBalancer
+              loadBalancerIP: {{ .Values.network.services.pihole.backup_ip }}
+              selector:
+                app.kubernetes.io/name: pihole
+              ports:
+              - name: dns-tcp-backup
+                port: 53
+                targetPort: 53
+                protocol: TCP
+              - name: dns-udp-backup
+                port: 53
+                targetPort: 53
+                protocol: UDP
 
   - name: homebridge
     namespace: homebridge
@@ -192,4 +217,3 @@ releases:
             echo "🚨 Emergency cleanup available"
             echo "  helmfile destroy --selector name=longhorn"
             echo "  helmfile destroy --selector name=metallb"
-

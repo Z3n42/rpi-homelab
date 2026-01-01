@@ -1,19 +1,5 @@
 replicaCount: 1
 
-serviceDNSPrimary:
-  enabled: true
-  type: LoadBalancer
-  loadBalancerIP: {{ .Values.network.services.pihole.primary_ip }}
-  annotations:
-    metallb.universe.tf/allow-shared-ip: "pihole-svc"
-
-serviceDNSBackup:
-  enabled: true
-  type: LoadBalancer
-  loadBalancerIP: {{ .Values.network.services.pihole.backup_ip }}
-  annotations:
-    metallb.universe.tf/allow-shared-ip: "pihole-svc"
-
 serviceTCP:
   enabled: true
   type: LoadBalancer
