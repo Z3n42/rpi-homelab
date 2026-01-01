@@ -84,6 +84,7 @@ releases:
     namespace: pihole
     chart: bedag/raw
     needs: [pihole/pihole]
+    force: true 
     values:
       - resources:
           - apiVersion: v1
