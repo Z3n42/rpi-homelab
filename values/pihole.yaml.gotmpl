@@ -1,19 +1,33 @@
 replicaCount: 2
 
+serviceDns:
+  type: LoadBalancer
+  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
+  externalTrafficPolicy: Local
+  annotations:
+    metallb.universe.tf/allow-shared-ip: "pihole-svc"
+
 serviceTCP:
-  type: ClusterIP
-  port: 53
+  enabled: true
+  type: LoadBalancer
+  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
+  externalTrafficPolicy: Local
+  annotations:
+    metallb.universe.tf/allow-shared-ip: "pihole-svc"
 
 serviceUDP:
-  type: ClusterIP
-  port: 53
+  enabled: true
+  type: LoadBalancer
+  loadBalancerIP: {{ .Values.network.services.pihole.ip }}
+  externalTrafficPolicy: Local
+  annotations:
+    metallb.universe.tf/allow-shared-ip: "pihole-svc"
 
 serviceWeb:
-  type: ClusterIP
-  sessionAffinity: ClientIP
-  sessionAffinityConfig:
-    clientIP:
-      timeoutSeconds: 10800
+  type: ClusterIP 
+
+serviceDhcp:
+  enabled: false
 
 persistentVolumeClaim:
   enabled: true
@@ -26,6 +40,7 @@ pihole:
   dns:
     upstreams:
       - unbound-main.pihole.svc.cluster.local#5335
+
 probes:
   liveness:
     initialDelaySeconds: 120
@@ -35,5 +50,3 @@ probes:
     initialDelaySeconds: 60
     timeoutSeconds: 5
     failureThreshold: 5
-
-extraContainers: []

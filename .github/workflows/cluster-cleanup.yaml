@@ -1,0 +1,70 @@
+name: 🧹 Cluster Cleanup (Panic Button)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: '⚠️  TYPE "CONFIRM-CLEANUP" to proceed'
+        required: true
+        default: ''
+      target:
+        description: 'What to clean? (all/longhorn/metallb/pihole/none)'
+        default: 'all'
+        type: choice
+        options: 
+          - 'all'
+          - 'longhorn'
+          - 'metallb'
+          - 'pihole'
+          - 'none'
+
+jobs:
+  cleanup:
+    runs-on: self-hosted
+    steps:
+      - name: 🚨 SAFETY CHECK
+        if: github.event.inputs.confirm != 'CONFIRM-CLEANUP'
+        run: |
+          echo "❌ ABORTED: Type 'CONFIRM-CLEANUP' in the confirmation field!"
+          exit 1
+
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: 🧹 TOTAL CLEANUP
+        run: |
+          echo "🚨 CLUSTER CLEANUP INITIATED"
+          echo "Target: ${{ github.event.inputs.target }}"
+          
+          case "${{ github.event.inputs.target }}" in
+            "all")
+              echo "🧹 Cleaning ALL releases..."
+              helmfile destroy --all || true
+              kubectl delete ns --all --force --grace-period=0 || true
+              sleep 10
+              kubectl delete crd --all || true
+              ;;
+              
+            "longhorn")
+              echo "🧹 Cleaning Longhorn..."
+              helm -n longhorn-system uninstall longhorn --no-hooks || true
+              kubectl delete ns longhorn-system --force --grace-period=0 || true
+              kubectl delete crd -l app.kubernetes.io/name=longhorn || true
+              ;;
+              
+            "metallb")
+              echo "🧹 Cleaning MetalLB..."
+              helm -n metallb-system uninstall metallb --no-hooks || true
+              kubectl delete ns metallb-system --force --grace-period=0 || true
+              kubectl delete crd -l app=metallb || true
+              ;;
+              
+            "pihole")
+              echo "🧹 Cleaning Pi-hole..."
+              helm -n pihole uninstall unbound pihole --no-hooks || true
+              kubectl delete ns pihole --force --grace-period=0 || true
+              ;;
+          esac
+          
+          echo "✅ Cleanup completed!"
+          echo "🔄 Ready for fresh deploy with: helmfile sync"

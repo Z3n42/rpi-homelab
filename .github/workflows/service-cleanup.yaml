@@ -1,0 +1,77 @@
+name: 🧹 Service Cleanup (Keep Persistence)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Services to cleanup (keep Longhorn volumes)'
+        required: true
+        default: 'all'
+        type: choice
+        options: 
+          - 'all'
+          - 'pihole'
+          - 'homebridge'
+          - 'tailscale'
+          - 'unbound'
+          - 'metallb-config'
+
+jobs:
+  cleanup:
+    runs-on: self-hosted
+    steps:
+      - name: 🚨 SAFETY CHECK
+        if: github.event.inputs.confirm != 'CONFIRM-SERVICE-CLEANUP'
+        run: |
+          echo "❌ ABORTED: Type 'CONFIRM-SERVICE-CLEANUP' in confirmation!"
+          exit 1
+
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: 🧹 SERVICE CLEANUP (PERSISTENCE SAFE)
+        run: |
+          echo "🧹 SERVICE CLEANUP - Longhorn volumes PRESERVED"
+          echo "Target: ${{ github.event.inputs.target }}"
+          
+          case "${{ github.event.inputs.target }}" in
+            "all")
+              echo "🧹 Cleaning ALL services (except Longhorn CRDs/volumes)..."
+              helmfile destroy --selector name!=longhorn || true
+              kubectl delete ns --all --force --grace-period=0 || true
+              # NO toca CRDs de Longhorn ni PVCs
+              ;;
+              
+            "pihole")
+              echo "🧹 Cleaning Pi-hole stack..."
+              helm -n pihole uninstall pihole-services pihole unbound --no-hooks || true
+              kubectl delete ns pihole --force --grace-period=0 || true
+              ;;
+              
+            "homebridge")
+              echo "🧹 Cleaning Homebridge..."
+              helm -n homebridge uninstall homebridge --no-hooks || true
+              kubectl delete ns homebridge --force --grace-period=0 || true
+              ;;
+              
+            "tailscale")
+              echo "🧹 Cleaning Tailscale..."
+              helm -n tailscale uninstall tailscale --no-hooks || true
+              kubectl delete ns tailscale --force --grace-period=0 || true
+              ;;
+              
+            "unbound")
+              echo "🧹 Cleaning Unbound..."
+              kubectl delete deployment -n pihole -l app.kubernetes.io/name=app-template || true
+              ;;
+              
+            "metallb-config")
+              echo "🧹 Cleaning MetalLB config only..."
+              helm -n metallb-system uninstall metallb-config --no-hooks || true
+              ;;
+          esac
+          
+          echo "✅ Services cleaned!"
+          echo "💾 Longhorn volumes PRESERVED:"
+          kubectl get pv | grep longhorn || echo "No Longhorn PVs found"
+          echo "🔄 Ready for redeploy: helmfile sync"
