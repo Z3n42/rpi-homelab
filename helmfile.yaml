@@ -11,12 +11,16 @@ repositories:
     url: https://bjw-s-labs.github.io/helm-charts/
   - name: bedag
     url: https://bedag.github.io/helm-charts
+  - name: traefik
+    url: https://traefik.github.io/charts
 
+---
 environments:
   default:
     values:
       - values/network.yaml
 
+---
 releases:
   - name: metallb
     namespace: metallb-system
@@ -45,6 +49,7 @@ releases:
     createNamespace: true
     chart: traefik/traefik
     version: "28.1.0"
+    needs: [metallb-system/metallb-config] 
     values:
       - providers:
           kubernetesCRD:
