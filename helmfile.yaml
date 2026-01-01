@@ -139,7 +139,7 @@ releases:
         resources:
           - apiVersion: v1
             kind: Service
-            meta
+            metadata:
               name: pihole-dns-backup
             spec:
               type: LoadBalancer
