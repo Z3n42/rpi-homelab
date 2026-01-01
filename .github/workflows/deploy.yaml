@@ -60,7 +60,7 @@ jobs:
           kubectl get crd | grep metallb | tee -a $LOGFILE
           
           echo "🎯 PASO 2: Deploy completo (Pi-hole + todo)..." | tee -a $LOGFILE
-          helmfile sync 2>&1 --atomic --wait 2>&1 | tee -a $LOGFILE  # ← DUPLICADO 2>&1
+          helmfile sync 2>&1 | tee -a $LOGFILE
           
           STATUS=$?
           
