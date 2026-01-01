@@ -108,7 +108,7 @@ releases:
         - "wait"
         - "-n"
         - "pihole"
-        - "--for=jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}=True'"
+        - "--for=condition=Available"
         - "deployment/pihole"
         - "--timeout=120s"
 
