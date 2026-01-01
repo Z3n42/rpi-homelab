@@ -41,17 +41,17 @@ jobs:
           kubectl delete crd -l app.kubernetes.io/name=traefik --ignore-not-found=true
           kubectl delete ingressclass traefik --ignore-not-found=true          
 
-      - name: 🔧 Install Traefik CRDs (v1alpha1)
+          
+      - name: 🔧 Install Traefik CRDs (v1)
         run: |
-          echo "📦 Traefik v3.1 CRDs (v1alpha1)..."
-          kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v3.1/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1alpha1.yml
+          echo "📦 Traefik v3.1 CRDs (v1)..."
+          kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v3.1/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml
           
           kubectl wait --for=condition=Established \
-            crd/middlewares.traefik.containo.us \
+            crd/middlewares.traefik.io \
             --timeout=60s
           
-          echo "✅ Middleware CRD:"
-          kubectl get crd middlewares.traefik.containo.us
+          echo "✅ CRDs installed"
 
           
       - name: 🚀 Deploy with Helmfile
