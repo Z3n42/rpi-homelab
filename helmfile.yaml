@@ -86,49 +86,42 @@ releases:
       - values/pihole.yaml.gotmpl
     hooks:
       - events: [postsync]
-        name: "pihole-healthcheck"
+        name: "pihole-wait-ready"
         showlogs: true
-        command: "kubectl"
+        command: "sh"
         args:
-          - "wait"
-          - "-n"
-          - "pihole"
-          - "--for=condition=Available"
-          - "deployment/pihole"
-          - "--timeout=180s"
+          - "-c"
+          - |
+            echo "⏳ Waiting for Pi-hole pod to be fully ready..."
+            kubectl wait -n pihole --for=condition=Ready pod -l app.kubernetes.io/name=pihole --timeout=300s
+            kubectl rollout status -n pihole deployment/pihole --timeout=300s
+            echo "✅ Pi-hole pod ready!"
+
       - events: [postsync]
         name: "pihole-repair-gravity"
         showlogs: true
-        command: "kubectl"
+        command: "sh"
         args:
-          - "exec"
-          - "-n"
-          - "pihole"
-          - "deployment/pihole"
-          - "--"
-          - "bash"
           - "-c"
           - |
-            echo "🔧 Repairing Pi-hole gravity database..."
-            pihole -g && pihole restartdns && echo "✅ Gravity repair complete!"
+            kubectl exec -n pihole deployment/pihole -- bash -c "
+              echo '🔧 Repairing Pi-hole gravity database...'
+              pihole -g
+              pihole restartdns
+              echo '✅ Gravity repair complete!'"
+
       - events: [postsync]
         name: "pihole-config-upstreams"
         showlogs: true
-        command: "kubectl"
+        command: "sh"
         args:
-          - "exec"
-          - "-n"
-          - "pihole"
-          - "deployment/pihole"
-          - "--"
-          - "pihole"
-          - "-a"
           - "-c"
           - |
-            sqlite3 /etc/pihole/gravity.db "DELETE FROM config WHERE property='dns_upstreams';"
-            sqlite3 /etc/pihole/gravity.db "INSERT INTO config (property, value) VALUES ('dns_upstreams', 'unbound-main.pihole.svc.cluster.local#5335');"
-            pihole restartdns
-            echo "✅ Upstream DNS configurado permanentemente"
+            kubectl exec -n pihole deployment/pihole -- sh -c "
+              sqlite3 /etc/pihole/gravity.db \"DELETE FROM config WHERE property='dns_upstreams';\"
+              sqlite3 /etc/pihole/gravity.db \"INSERT INTO config (property, value) VALUES ('dns_upstreams', 'unbound-main.pihole.svc.cluster.local#5335');\"
+              pihole restartdns
+            echo '✅ Upstream DNS configurado permanentemente'"
 
   - name: pihole-services-lb
     namespace: pihole
