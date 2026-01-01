@@ -24,15 +24,13 @@ pihole:
     enabled: true
     blocklists:
       - https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
-      - https://big.oisd.nl  # 2.5M dominios
+      - https://big.oisd.nl
       - https://v.firebog.net/hosts/static/w3kbl.txt
 
 serviceDns:
   enabled: true
   mixedService: true
-  type: LoadBalancer
-  loadBalancerIP: "{{ .Values.network.services.pihole.primary_ip }}"
-  externalTrafficPolicy: Local
+  type: ClusterIP 
   ports:
     - name: dns-tcp
       port: 53
@@ -44,10 +42,6 @@ serviceDns:
       port: 80
       targetPort: 80
       protocol: TCP
-    - name: https
-      port: 443
-      targetPort: 443
-      protocol: TCP
 
 probes:
   liveness:
@@ -58,3 +52,7 @@ probes:
     initialDelaySeconds: 60
     timeoutSeconds: 5
     failureThreshold: 5
+
+ingress:
+  enabled: false
+  

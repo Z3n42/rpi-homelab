@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pihole-admin-traefik
+  namespace: pihole
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: 
+      pihole-headers@kubernetescrd,pihole-ratelimit@kubernetescrd
+    ingress.kubernetes.io/force-ssl-redirect: "true"
+    
+  labels:
+    app.kubernetes.io/name: pihole
+    app.kubernetes.io/component: ingress-admin
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: pihole.home.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: pihole-dns
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - pihole.home.lan
+      secretName: pihole-admin-traefik-tls
