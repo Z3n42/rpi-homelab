@@ -13,8 +13,6 @@ repositories:
     url: https://bedag.github.io/helm-charts
   - name: traefik
     url: https://traefik.github.io/charts
-  - name: traefik-crds
-    url: https://traefik.github.io/traefik-helm-chart
 
 ---
 environments:
