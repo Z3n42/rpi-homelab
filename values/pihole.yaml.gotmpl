@@ -30,7 +30,7 @@ pihole:
 serviceDns:
   enabled: true
   mixedService: true
-  type: ClusterIP 
+  type: LoadBalancer
   ports:
     - name: dns-tcp
       port: 53
