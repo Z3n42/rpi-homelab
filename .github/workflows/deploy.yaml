@@ -43,11 +43,9 @@ jobs:
 
       - name: 🔧 Install Traefik CRDs
         run: |
-          echo "📦 Installing Traefik CRDs..."
-          kubectl apply -f https://github.com/traefik/traefik/releases/download/v3.1.2/traefik-crd.yaml
-          kubectl wait --for=condition=Established crd/middlewares.traefik.containo.us --timeout=60s || kubectl wait --for=condition=Established crd/middlewares.traefik.containo.us --timeout=30s
-          kubectl get crd | grep traefik | head -5
-          echo "✅ CRDs ready"
+          kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v3.1/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml
+          kubectl wait --for=condition=Established crd/middlewares.traefik.containo.us --timeout=60s
+          echo "✅ CRDs: $(kubectl get crd | grep traefik | wc -l) installed"
 
       - name: 🚀 Deploy with Helmfile
         env:
