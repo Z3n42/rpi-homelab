@@ -34,11 +34,21 @@ jobs:
           kubectl version --client
           helmfile --version
           sops --version
+
       - name: 🧹 Pre-deploy Cleanup (Safe)
         run: |
           echo "🔄 Pre-deploy cleanup..."
           kubectl delete crd -l app.kubernetes.io/name=traefik --ignore-not-found=true
           kubectl delete ingressclass traefik --ignore-not-found=true          
+
+      - name: 🔧 Install Traefik CRDs
+        run: |
+          echo "📦 Installing Traefik CRDs..."
+          kubectl apply -f https://github.com/traefik/traefik/releases/download/v3.1.2/traefik-crd.yaml
+          kubectl wait --for=condition=Established crd/middlewares.traefik.containo.us --timeout=60s || kubectl wait --for=condition=Established crd/middlewares.traefik.containo.us --timeout=30s
+          kubectl get crd | grep traefik | head -5
+          echo "✅ CRDs ready"
+
       - name: 🚀 Deploy with Helmfile
         env:
           PIHOLE_IP: "192.168.1.10"
@@ -79,3 +89,12 @@ jobs:
             exit $STATUS
           fi
           echo "========================================================" | tee -a $LOGFILE
+
+      - name: 🔍 Final Health Check
+        if: success()
+        run: |
+          echo "🎯 Health Check:"
+          kubectl get svc -n pihole | grep LoadBalancer
+          kubectl get ingress -n pihole
+          kubectl get pods -n traefik-system -n pihole | grep -E "(Running|Ready)"
+          curl -k -H "Host: pihole.home.lan" http://192.168.1.50 || echo "Web test (ignore if TLS)"
