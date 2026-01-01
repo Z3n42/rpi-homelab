@@ -1,5 +1,5 @@
 resources:
-  - apiVersion: traefik.io/v1
+  - apiVersion: traefik.containo.us/v1alpha1
     kind: Middleware
     metadata:
       name: pihole-headers
@@ -10,7 +10,7 @@ resources:
         contentTypeNosniff: true
         forceSTSHeader: true
         stsSeconds: 31536000
-  - apiVersion: traefik.io/v1
+  - apiVersion: traefik.containo.us/v1alpha1
     kind: Middleware
     metadata:
       name: pihole-ratelimit
@@ -19,7 +19,7 @@ resources:
       rateLimit:
         average: 100
         burst: 200
-  - apiVersion: traefik.io/v1
+  - apiVersion: traefik.containo.us/v1alpha1
     kind: Middleware
     metadata:
       name: pihole-redirect-http

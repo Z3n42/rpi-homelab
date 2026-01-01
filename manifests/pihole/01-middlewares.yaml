@@ -1,4 +1,4 @@
-apiVersion: traefik.io/v1
+apiVersion: traefik.containo.us/v1alpha1
 kind: Middleware
 metadata:
   name: pihole-headers
@@ -15,7 +15,7 @@ spec:
     stsIncludeSubdomains: true
     stsPreload: true
 ---
-apiVersion: traefik.io/v1
+apiVersion: traefik.containo.us/v1alpha1
 kind: Middleware
 metadata:
   name: pihole-ratelimit
@@ -28,7 +28,7 @@ spec:
     average: 100
     burst: 200
 ---
-apiVersion: traefik.io/v1
+apiVersion: traefik.containo.us/v1alpha1
 kind: Middleware
 metadata:
   name: pihole-redirect-http
