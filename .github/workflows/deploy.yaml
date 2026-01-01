@@ -35,7 +35,7 @@ jobs:
           helmfile --version
           sops --version
 
-      - name: 🚀 Deploy with Helmfile
+      - name: 🚀 Deploy with Helmfile (ATOMIC)
         env:
           PIHOLE_IP: "192.168.1.10"
           HOMEBRIDGE_IP: "192.168.1.14"
@@ -45,7 +45,7 @@ jobs:
           
           {
             echo "========================================================"
-            echo "🚀 START DEPLOY: $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "🚀 ATOMIC DEPLOY: $(date '+%Y-%m-%d %H:%M:%S')"
             echo "Commit: ${{ github.sha }}"
             echo "Message: ${{ github.event.head_commit.message }}"
             echo "--------------------------------------------------------"
@@ -53,25 +53,31 @@ jobs:
           
           set -o pipefail
           
-          echo "🎯 PASO 1: Bootstrap MetalLB (CRDs)..." | tee -a $LOGFILE
+          echo "🎯 PASO 1: Bootstrap MetalLB..." | tee -a $LOGFILE
           helmfile sync --selector name=metallb 2>&1 | tee -a $LOGFILE
           
-          echo "✅ MetalLB CRDs instalados. Verificando..." | tee -a $LOGFILE
-          kubectl get crd | grep metallb | tee -a $LOGFILE
+          echo "✅ MetalLB ready. Full deploy..." | tee -a $LOGFILE
+          echo "🎯 PASO 2: Deploy completo (Atomic + Wait)..." | tee -a $LOGFILE
           
-          echo "🎯 PASO 2: Deploy completo (Pi-hole + todo)..." | tee -a $LOGFILE
-          helmfile sync 2>&1 | tee -a $LOGFILE
+          # ATOMIC: Rollback automático si falla
+          # WAIT: Espera pods Ready
+          # TIMEOUT: 5min max por release
+          helmfile sync --atomic --wait --timeout 300s 2>&1 | tee -a $LOGFILE
           
           STATUS=$?
           
           echo "--------------------------------------------------------" | tee -a $LOGFILE
           if [ $STATUS -eq 0 ]; then
-            echo "✅ SUCCESS: Deployment finished at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a $LOGFILE
-            echo "🔍 Verificando Pi-hole DNS IP..." | tee -a $LOGFILE
+            echo "✅ SUCCESS: $(date '+%Y-%m-%d %H:%M:%S')" | tee -a $LOGFILE
+            
+            echo "🔍 Status final:" | tee -a $LOGFILE
+            kubectl get pods --all-namespaces -l app.kubernetes.io/name=pihole | tee -a $LOGFILE
             kubectl get svc -n pihole | grep LoadBalancer | tee -a $LOGFILE
+            
           else
-            echo "❌ FAILED (Exit Code: $STATUS): $(date '+%Y-%m-%d %H:%M:%S')" | tee -a $LOGFILE
-            echo "Check log at $LOGFILE for details."
+            echo "❌ FAILED (Code: $STATUS)" | tee -a $LOGFILE
+            echo "ℹ️ Helm --atomic should have rolled back." | tee -a $LOGFILE
+            helmfile list | tee -a $LOGFILE
             exit $STATUS
           fi
           echo "========================================================" | tee -a $LOGFILE
