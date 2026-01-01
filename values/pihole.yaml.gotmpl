@@ -33,8 +33,6 @@ serviceDns:
   type: LoadBalancer
   loadBalancerIP: "{{ .Values.network.services.pihole.primary_ip }}"
   externalTrafficPolicy: Local
-  annotations:
-    metallb.universe.tf/address-pool: default-pool
   ports:
     - name: dns-tcp
       port: 53
