@@ -70,12 +70,40 @@ apt update -qq && apt install -y curl wget git htop vim open-iscsi nfs-common ag
 # ENABLE & START CRITICAL STORAGE SERVICES (Longhorn needs these!)
 echo "    - Enabling storage services (iSCSI/NFS)..."
 systemctl enable --now iscsid
-systemctl enable --now rpcbind  # Necesario para NFS
-systemctl enable --now nfs-client.target # En algunos sistemas se llama así, en otros es nfs-common
+systemctl enable --now rpcbind
+systemctl enable --now nfs-client.target
 
 # Verify connection
 if ! systemctl is-active --quiet iscsid; then
     echo -e "${YELLOW}⚠️  Warning: iSCSI service is not active. Longhorn might complain.${NC}"
+fi
+
+# Network Config
+ZENPI_IP=$(awk '/zenpi_ip/{print $2; exit}' values/network.yaml | tr -d '"')
+
+if [ -n "$ZENPI_IP" ]; then
+  echo -e "${GREEN}Configuring static IP $ZENPI_IP via netplan...${NC}"
+  NETPLAN_FILE="/etc/netplan/01-zenpi.yaml"
+
+  cat > "$NETPLAN_FILE" <<EOF
+network:
+  version: 2
+  renderer: NetworkManager
+  ethernets:
+    eth0:
+      dhcp4: false
+      dhcp6: true
+      addresses:
+        - ${ZENPI_IP}/24
+      gateway4: 192.168.1.1
+      nameservers:
+        addresses: [1.1.1.1, 8.8.8.8]
+EOF
+
+  chmod 600 "$NETPLAN_FILE"
+  netplan generate
+  netplan apply
+  echo "✅ IP applied: $(ip addr show eth0 | grep 'inet ' | awk '{print $2}')"
 fi
 
 # Install K3s (Lightweight Kubernetes)
