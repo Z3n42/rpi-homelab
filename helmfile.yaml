@@ -24,9 +24,17 @@ environments:
 releases:
   - name: traefik-crds
     namespace: traefik-system
-    chart: traefik/traefik-crd
-    version: "28.1.0"
+    chart: bedag/raw
+    version: "0.1.0"
     createNamespace: true
+    values:
+      - resources:
+          - url: https://raw.githubusercontent.com/traefik/traefik/v3.1/crd/traefik.io_ingresses.yaml
+          - url: https://raw.githubusercontent.com/traefik/traefik/v3.1/crd/traefik.io_ingressroutes.yaml
+          - url: https://raw.githubusercontent.com/traefik/traefik/v3.1/crd/traefik.io_middlewares.yaml
+          - url: https://raw.githubusercontent.com/traefik/traefik/v3.1/crd/traefik.io_tlsoptions.yaml
+          - url: https://raw.githubusercontent.com/traefik/traefik/v3.1/crd/traefik.io_tlsstores.yaml
+
 
   - name: metallb
     namespace: metallb-system
