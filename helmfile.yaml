@@ -50,6 +50,24 @@ releases:
     chart: traefik/traefik
     version: "28.1.0"
     needs: [metallb-system/metallb-config] 
+    hooks:
+      - events: [postsync]
+        showlogs: true
+        command: "kubectl"
+        args: 
+          - "wait"
+          - "--namespace=traefik-system"
+          - "--for=condition=Available"
+          - "deployment/traefik"
+          - "--timeout=120s"
+      - events: [postsync]
+        showlogs: true
+        command: "kubectl"
+        args:
+          - "wait"
+          - "--for=condition=Established"
+          - "crd:middlewares.traefik.io"
+          - "--timeout=60s"
     values:
       - providers:
           kubernetesCRD:
