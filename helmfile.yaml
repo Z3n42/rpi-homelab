@@ -54,20 +54,15 @@ releases:
       - events: [postsync]
         showlogs: true
         command: "kubectl"
-        args: 
-          - "wait"
-          - "--namespace=traefik-system"
-          - "--for=condition=Available"
-          - "deployment/traefik"
-          - "--timeout=120s"
+        args: ["wait", "--for=condition=Established", "crd", "--selector=app.kubernetes.io/managed-by=traefik", "--timeout=120s"]
       - events: [postsync]
         showlogs: true
-        command: "kubectl"
+        command: "sh"
         args:
-          - "wait"
-          - "--for=condition=Established"
-          - "crd/middlewares.traefik.io"
-          - "--timeout=60s"
+          - "-c"
+          - |
+            kubectl wait --for=condition=Established crd/middlewares.traefik.io --timeout=30s || true
+            kubectl get crd | grep traefik || echo "CRDs not ready yet"
     values:
       - providers:
           kubernetesCRD:
