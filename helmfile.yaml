@@ -61,8 +61,9 @@ releases:
         args:
           - "-c"
           - |
+            sleep 15
             kubectl wait --for=condition=Established crd/middlewares.traefik.io --timeout=30s || true
-            kubectl get crd | grep traefik || echo "CRDs not ready yet"
+            kubectl get crd | grep traefik || echo "CRDs checking..."
     values:
       - providers:
           kubernetesCRD:
@@ -93,6 +94,7 @@ releases:
           storageClass: longhorn
           size: 1Gi
       - installationCRDs: true
+
 
   - name: unbound
     namespace: pihole
