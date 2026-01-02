@@ -22,19 +22,6 @@ environments:
 
 ---
 releases:
-  - name: traefik-crds
-    namespace: traefik-system
-    chart: bedag/raw
-    createNamespace: true
-    values:
-      - resources:
-          - url: https://raw.githubusercontent.com/traefik/traefik/v3.1/crd/traefik.io_ingresses.yaml
-          - url: https://raw.githubusercontent.com/traefik/traefik/v3.1/crd/traefik.io_ingressroutes.yaml
-          - url: https://raw.githubusercontent.com/traefik/traefik/v3.1/crd/traefik.io_middlewares.yaml
-          - url: https://raw.githubusercontent.com/traefik/traefik/v3.1/crd/traefik.io_tlsoptions.yaml
-          - url: https://raw.githubusercontent.com/traefik/traefik/v3.1/crd/traefik.io_tlsstores.yaml
-
-
   - name: metallb
     namespace: metallb-system
     chart: metallb/metallb
@@ -59,9 +46,10 @@ releases:
 
   - name: traefik
     namespace: traefik-system
+    createNamespace: true
     chart: traefik/traefik
     version: "28.1.0"
-    needs: [metallb-system/metallb-config, traefik-system/traefik-crds] 
+    needs: [metallb-system/metallb-config] 
     values:
       - providers:
           kubernetesCRD:
@@ -91,6 +79,7 @@ releases:
           enabled: true
           storageClass: longhorn
           size: 1Gi
+      - installationCRDs: true
 
   - name: unbound
     namespace: pihole
