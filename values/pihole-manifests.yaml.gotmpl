@@ -35,10 +35,7 @@ resources:
       name: pihole-admin-traefik
       namespace: pihole
       annotations:
-        traefik.ingress.kubernetes.io/router.entrypoints: websecure
-        traefik.ingress.kubernetes.io/router.tls: "true"
-        traefik.ingress.kubernetes.io/router.middlewares: 
-          pihole-headers@kubernetescrd,pihole-ratelimit@kubernetescrd,pihole-redirect-http@kubernetescrd
+        traefik.ingress.kubernetes.io/router.entrypoints: web
     spec:
       ingressClassName: traefik
       rules:
