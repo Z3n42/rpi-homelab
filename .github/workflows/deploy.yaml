@@ -35,21 +35,6 @@ jobs:
           helmfile --version
           sops --version
 
-      - name: 🧹 Pre-deploy Cleanup (Safe)
-        run: |
-          echo "🔄 Pre-deploy cleanup..."
-          kubectl delete crd -l app.kubernetes.io/name=traefik --ignore-not-found=true
-          kubectl delete ingressclass traefik --ignore-not-found=true          
-
-
-      - name: 🔧 Install Traefik CRDs (v1alpha1)
-        run: |
-          kubectl apply -f "https://raw.githubusercontent.com/traefik/traefik-helm-chart/master/traefik-crds/crds.yaml"
-          
-          kubectl wait --for=condition=Established \
-            crd/middlewares.traefik.containo.us \
-            --timeout
-
           
       - name: 🚀 Deploy with Helmfile
         env:

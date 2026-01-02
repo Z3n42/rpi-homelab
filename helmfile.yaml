@@ -22,6 +22,12 @@ environments:
 
 ---
 releases:
+  - name: traefik-crds
+    namespace: traefik-system
+    chart: traefik/traefik-crd
+    version: "28.1.0"
+    createNamespace: true
+
   - name: metallb
     namespace: metallb-system
     chart: metallb/metallb
@@ -46,10 +52,9 @@ releases:
 
   - name: traefik
     namespace: traefik-system
-    createNamespace: true
     chart: traefik/traefik
     version: "28.1.0"
-    needs: [metallb-system/metallb-config] 
+    needs: [metallb-system/metallb-config, traefik-system/traefik-crds] 
     values:
       - providers:
           kubernetesCRD:
@@ -144,7 +149,7 @@ releases:
                 port: 53
                 targetPort: 53
                 protocol: UDP
-  
+
   - name: pihole-manifests
     namespace: pihole
     chart: bedag/raw
@@ -155,9 +160,7 @@ releases:
   - name: homebridge
     namespace: homebridge
     chart: bjw-s/app-template
-    needs: 
-      - metallb-system/metallb
-      - longhorn-system/longhorn
+    needs: [metallb-system/metallb, longhorn-system/longhorn]
     createNamespace: true
     values:
       - controllers:
@@ -192,8 +195,7 @@ releases:
     namespace: tailscale
     chart: tailscale/tailscale-operator
     needs: [metallb-system/metallb]
-    secrets:
-      - secrets/app.sops.yaml
+    secrets: [secrets/app.sops.yaml]
     values:
       - operatorConfig:
           logging: "info"
