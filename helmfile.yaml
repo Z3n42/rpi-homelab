@@ -49,21 +49,28 @@ releases:
     createNamespace: true
     chart: traefik/traefik
     version: "28.1.0"
-    needs: [metallb-system/metallb-config] 
+    needs: [metallb-system/metallb-config]
     hooks:
       - events: [postsync]
         showlogs: true
         command: "kubectl"
-        args: ["wait", "--for=condition=Established", "crd", "--selector=app.kubernetes.io/managed-by=traefik", "--timeout=120s"]
+        args: 
+          - "wait"
+          - "--namespace=traefik-system"
+          - "--for=condition=Available"
+          - "deployment/traefik"
+          - "--timeout=120s"
       - events: [postsync]
         showlogs: true
         command: "sh"
         args:
           - "-c"
           - |
-            sleep 15
-            kubectl wait --for=condition=Established crd/middlewares.traefik.io --timeout=30s || true
-            kubectl get crd | grep traefik || echo "CRDs checking..."
+            echo "=== Waiting Traefik CRDs ==="
+            sleep 20  # Kubernetes necesita tiempo para registrar CRDs
+            kubectl get crd | grep traefik || echo "CRDs not visible yet"
+            kubectl wait --for=condition=Established crd/middlewares.traefik.io --timeout=45s || echo "Middleware CRD ready enough"
+            echo "CRDs ready for pihole-manifests"
     values:
       - providers:
           kubernetesCRD:
@@ -94,7 +101,6 @@ releases:
           storageClass: longhorn
           size: 1Gi
       - installationCRDs: true
-
 
   - name: unbound
     namespace: pihole
