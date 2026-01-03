@@ -201,10 +201,12 @@ resources:
     metadata:
       name: pihole-web
       namespace: pihole
+      annotations:
+        metallb.universe.tf/loadBalancerIPs: "{{ .Values.network.services.pihole.web_ip }}"
     spec:
       selector:
         app: pihole
-      type: ClusterIP
+      type: LoadBalancer
       loadBalancerIP: "{{ .Values.network.services.pihole.web_ip }}"
       ports:
         - name: http
