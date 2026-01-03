@@ -36,58 +36,70 @@ jobs:
           TARGET="${{ inputs.target }}"
           echo "🔥 STARTING CLEANUP: $TARGET"
 
-          clean_ns() {
+          # Función para forzar borrado de Namespace
+          force_delete_ns() {
             NS=$1
             if kubectl get ns $NS > /dev/null 2>&1; then
-              echo "Deleting namespace $NS..."
-              kubectl delete ns $NS --timeout=60s || {
-                echo "⚠️ Namespace stuck? Removing finalizers..."
-                kubectl get ns $NS -o json | jq '.spec.finalizers=[]' | kubectl replace --raw "/api/v1/namespaces/$NS/finalize" -f -
-              }
+              echo "⏳ Deleting namespace $NS..."
+              # Intentar borrado normal
+              kubectl delete ns $NS --timeout=30s --wait=false || true
+              
+              # Eliminar recursos bloqueantes
+              kubectl delete all --all -n $NS --force --grace-period=0 || true
+              kubectl delete pvc --all -n $NS --force --grace-period=0 || true
+              
+              # PATCH FINALIZERS (La magia)
+              echo "🔨 Patching finalizers for $NS..."
+              kubectl get ns $NS -o json | \
+                jq '.spec.finalizers=[]' | \
+                kubectl replace --raw "/api/v1/namespaces/$NS/finalize" -f - || true
+            else
+              echo "✅ Namespace $NS already gone."
             fi
           }
 
           case "$TARGET" in
-            "all")
-              echo "💥 DESTROYING EVERYTHING (Except System)..."
-              helmfile destroy --all || true
-              
-              kubectl get ns --no-headers -o custom-columns=:metadata.name | \
-                grep -vE 'kube-system|default|kube-public|kube-node-lease' | \
-                xargs -r kubectl delete ns --force --grace-period=0
+            "pihole")
+              echo "🧹 Cleaning Pi-hole Stack..."
+              # Usa el nombre correcto del release en helmfile
+              helmfile destroy --selector name=pihole-stack || true
+              force_delete_ns "pihole"
               ;;
 
-            "pihole")
-              echo "🧹 Cleaning Pi-hole & Unbound..."
-              helmfile --selector name=pihole destroy || true
-              helmfile --selector name=unbound destroy || true
-              helm uninstall -n pihole pihole unbound || true
-              clean_ns "pihole"
-              ;;
+            "traefik")
+               echo "🧹 Cleaning Traefik..."
+               helmfile destroy --selector name=traefik || true
+               force_delete_ns "traefik-system"
+               ;;
 
             "metallb")
               echo "🧹 Cleaning MetalLB..."
-              helmfile --selector name=metallb destroy || true
-              helm uninstall -n metallb-system metallb || true
-              clean_ns "metallb-system"
+              helmfile destroy --selector name=metallb || true
+              helmfile destroy --selector name=metallb-config || true
+              force_delete_ns "metallb-system"
               ;;
 
             "longhorn")
-              echo "🧹 Cleaning Longhorn..."
-              helmfile --selector name=longhorn destroy || true
-              kubectl -n longhorn-system patch -p '{"metadata":{"finalizers":[]}}' type=merge p pod --all || true
-              clean_ns "longhorn-system"
+              echo "⚠️ Cleaning Longhorn (DANGER)..."
+              # Longhorn requiere desinstalación limpia primero
+              helmfile destroy --selector name=longhorn || true
+              # Script oficial de limpieza Longhorn si falla (opcional)
+              # curl -sSfL https://raw.githubusercontent.com/longhorn/longhorn/master/uninstall/uninstall.sh | bash || true
+              force_delete_ns "longhorn-system"
               ;;
-            
-            "traefik")
-               echo "🧹 Cleaning Traefik..."
-               helmfile --selector name=traefik destroy || true
-               clean_ns "traefik-system"
-               ;;
+
+            "all")
+              echo "💥 DESTROYING EVERYTHING..."
+              helmfile destroy || true
+              # Lista de namespaces a purgar
+              for ns in pihole traefik-system metallb-system longhorn-system homebridge tailscale; do
+                force_delete_ns $ns
+              done
+              ;;
           esac
 
-          echo "🗑️ Pruning Orphaned Resources..."
-          kubectl delete pod --field-selector=status.phase==Failed -A || true
-          kubectl delete pod --field-selector=status.phase==Succeeded -A || true
-
+          echo "🗑️ Pruning global orphans..."
+          kubectl delete pod --field-selector=status.phase==Failed -A --ignore-not-found=true
+          kubectl delete pod --field-selector=status.phase==Succeeded -A --ignore-not-found=true
+          
           echo "✅ CLEANUP COMPLETED!"
