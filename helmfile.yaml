@@ -102,6 +102,9 @@ releases:
     secrets: [secrets/app.sops.yaml]
     values:
       - manifests/pihole/pihole-unbound-v6.yaml.gotmpl
+      - secretRef:
+          name: adminPassword
+          path: pihole.adminPassword
 
   - name: homebridge
     namespace: homebridge
