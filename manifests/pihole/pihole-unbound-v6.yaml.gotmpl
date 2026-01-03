@@ -239,8 +239,7 @@ resources:
       name: pihole-ingress
       namespace: pihole
       annotations:
-        traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
-        traefik.ingress.kubernetes.io/router.middlewares: pihole-headers@kubernetescrd,pihole-redirect-http@kubernetescrd
+        kubernetes.io/ingress.class: traefik
     spec:
       ingressClassName: traefik
       rules:
