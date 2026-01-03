@@ -29,49 +29,54 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v3
 
-      - name: 🧹 SERVICE CLEANUP (PERSISTENCE SAFE)
+      - name: 🧹 Service Cleanup (Keep Persistence)
         run: |
+          TARGET: ${{ github.event.inputs.target || 'all' }} 
           echo "🧹 SERVICE CLEANUP - Longhorn volumes PRESERVED"
-          echo "Target: ${{ github.event.inputs.target }}"
           
-          case "${{ github.event.inputs.target }}" in
+          cleanup_release() {
+            RELEASE_NAME=$1
+            echo "🧹 Cleaning release: $RELEASE_NAME"
+            helmfile destroy --selector name=$RELEASE_NAME || true
+          }
+          
+          cleanup_ns_safe() {
+            NS=$1
+            if kubectl get ns $NS >/dev/null 2>&1; then
+              echo "🧹 Deleting namespace $NS (services only)..."
+              kubectl delete deployments,statefulsets,jobs,services,configmaps,secrets,ingresses --all -n $NS || true
+            fi
+          }
+
+          case "$TARGET" in
             "all")
-              echo "🧹 Cleaning ALL services (except Longhorn CRDs/volumes)..."
-              helmfile destroy --selector name!=longhorn || true
-              kubectl delete ns --all --force --grace-period=0 || true
-              # NO toca CRDs de Longhorn ni PVCs
+              echo "🧹 Cleaning ALL services (except Longhorn/PVs)..."
+              for release in pihole-stack traefik homebridge tailscale; do
+                cleanup_release "$release"
+              done
               ;;
               
             "pihole")
-              echo "🧹 Cleaning Pi-hole stack..."
-              helm -n pihole uninstall pihole-services pihole unbound --no-hooks || true
-              kubectl delete ns pihole --force --grace-period=0 || true
+              cleanup_release "pihole-stack"
+              cleanup_ns_safe "pihole"
               ;;
               
             "homebridge")
-              echo "🧹 Cleaning Homebridge..."
-              helm -n homebridge uninstall homebridge --no-hooks || true
-              kubectl delete ns homebridge --force --grace-period=0 || true
+              cleanup_release "homebridge"
+              cleanup_ns_safe "homebridge"
               ;;
               
             "tailscale")
-              echo "🧹 Cleaning Tailscale..."
-              helm -n tailscale uninstall tailscale --no-hooks || true
-              kubectl delete ns tailscale --force --grace-period=0 || true
-              ;;
-              
-            "unbound")
-              echo "🧹 Cleaning Unbound..."
-              kubectl delete deployment -n pihole -l app.kubernetes.io/name=app-template || true
+              cleanup_release "tailscale"
+              cleanup_ns_safe "tailscale"
               ;;
               
             "metallb-config")
-              echo "🧹 Cleaning MetalLB config only..."
-              helm -n metallb-system uninstall metallb-config --no-hooks || true
+              cleanup_release "metallb-config"
               ;;
           esac
           
           echo "✅ Services cleaned!"
-          echo "💾 Longhorn volumes PRESERVED:"
-          kubectl get pv | grep longhorn || echo "No Longhorn PVs found"
-          echo "🔄 Ready for redeploy: helmfile sync"
+          echo "💾 Longhorn volumes intactos:"
+          kubectl get pvc -A | grep longhorn || echo "No PVCs"
+          echo "🔄 Ready for: helmfile apply"
