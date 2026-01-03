@@ -181,6 +181,9 @@ resources:
     metadata:
       name: pihole-dns
       namespace: pihole
+      annotations:
+        metallb.universe.tf/address-pool: pihole-pool
+        metallb.universe.tf/allow-shared-ip: "pihole-shared"
     spec:
       selector:
         app: pihole
@@ -204,6 +207,7 @@ resources:
       annotations:
         metallb.universe.tf/address-pool: pihole-pool
         metallb.universe.tf/loadBalancerIPs: "{{ .Values.network.services.pihole.web_ip }}"
+        metallb.universe.tf/allow-shared-ip: "pihole-shared"
     spec:
       selector:
         app: pihole
