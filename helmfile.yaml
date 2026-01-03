@@ -101,6 +101,7 @@ releases:
       - traefik-system/traefik
     secrets: [secrets/app.sops.yaml]
     values:
+      - values/pihole-secrets.yaml.gotmpl
       - manifests/pihole/pihole-unbound-v6.yaml.gotmpl
 
   - name: homebridge
