@@ -146,7 +146,7 @@ resources:
                 protocol: TCP
             volumeMounts:
               - name: unbound-conf
-                mountPath: /opt/unbound/etc/unbound/unbound.conf
+                mountPath: /etc/unbound/unbound.conf
                 subPath: unbound.conf
             securityContext:
               capabilities:
