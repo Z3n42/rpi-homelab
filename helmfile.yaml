@@ -155,7 +155,7 @@ releases:
     needs: [traefik-system/traefik]
     values:
       - resources:
-          - {{ readFile "manifests/traefik/traefik-dashboard.yaml.gotmpl" | fromYaml | toYaml | indent 12 | trim }}
+          - {{ tpl (readFile "manifests/traefik/traefik-dashboard.yaml.gotmpl") . | fromYaml | toYaml | indent 12 | trim }}         
 
   - name: cleanup-tools
     chart: bedag/raw
