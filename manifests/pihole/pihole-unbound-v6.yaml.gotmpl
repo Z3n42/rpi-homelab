@@ -239,7 +239,8 @@ resources:
       name: pihole-ingress
       namespace: pihole
       annotations:
-        kubernetes.io/ingress.class: traefik
+        traefik.ingress.kubernetes.io/router.entrypoints: web, websecure
+        traefik.ingress.kubernetes.io/router.middlewares: pihole-pihole-headers@kubernetescrd, pihole-pihole-redirect-http@kubernetescrd
     spec:
       ingressClassName: traefik
       rules:
@@ -252,7 +253,7 @@ resources:
                   service:
                     name: pihole-web
                     port:
-                      number: 80
+                        number: 80
       tls:
         - hosts:
             - "pihole.{{ .Values.network.domain }}"
