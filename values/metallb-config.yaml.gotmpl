@@ -8,7 +8,7 @@ resources:
       addresses:
       - "{{ .Values.network.services.pihole.primary_ip }}/32"
       - "{{ .Values.network.services.pihole.backup_ip }}/32"
-      - "{{ .Values.network.services.pihole.webip }}/32"
+      - "{{ .Values.network.services.pihole.web_ip }}/32"
       autoAssign: false
 
   - apiVersion: metallb.io/v1beta1
