@@ -6,10 +6,10 @@ metadata:
 spec:
   entryPoints:
     - web
-    - websecure
   routes:
-    - match: Host(`traefik.{{ .Values.network.domain }}`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))
+    - match: Host(`traefik.{{ index .Values "network" "domain" }}`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))
       kind: Rule
       services:
         - name: api@internal
           kind: TraefikService
+          
