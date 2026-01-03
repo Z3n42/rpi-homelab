@@ -95,12 +95,17 @@ network:
       dhcp6: true
       addresses:
         - ${ZENPI_IP}/24
-      gateway4: 192.168.1.1
+      routes:
+        - to: default
+          via: 192.168.1.1
       nameservers:
         addresses: [1.1.1.1, 8.8.8.8]
 EOF
 
   chmod 600 "$NETPLAN_FILE"
+  if [ -f /lib/netplan/00-network-manager-all.yaml ]; then
+        chmod 600 /lib/netplan/00-network-manager-all.yaml 2>/dev/null || true
+  fi
   netplan generate
   netplan apply
   echo "✅ IP applied: $(ip addr show eth0 | grep 'inet ' | awk '{print $2}')"

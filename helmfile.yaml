@@ -99,12 +99,12 @@ releases:
       - metallb-system/metallb
       - longhorn-system/longhorn
       - traefik-system/traefik 
-      
+
     secrets: [secrets/app.sops.yaml]
   
     values:
       - resources:
-          - manifests/pihole/pihole-unbound-v6.yaml
+        - manifests/pihole/pihole-unbound-v6.yaml.gotmpl
 
   - name: homebridge
     namespace: homebridge
