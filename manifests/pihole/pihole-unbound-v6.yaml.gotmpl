@@ -183,12 +183,12 @@ resources:
       namespace: pihole
       annotations:
         metallb.universe.tf/address-pool: pihole-pool
+        metallb.universe.tf/loadBalancerIPs: "{{ .Values.network.services.pihole.primary_ip }}"
         metallb.universe.tf/allow-shared-ip: "pihole-shared"
     spec:
       selector:
         app: pihole
       type: LoadBalancer
-      loadBalancerIP: "{{ .Values.network.services.pihole.primary_ip }}"
       ports:
         - name: domain-udp
           port: 53
@@ -212,7 +212,6 @@ resources:
       selector:
         app: pihole
       type: LoadBalancer
-      loadBalancerIP: "{{ .Values.network.services.pihole.web_ip }}"
       ports:
         - name: http
           port: 80
