@@ -218,3 +218,6 @@ resources:
                     name: pihole-web
                     port:
                       number: 80
+      tls:
+        - hosts:
+            - "pihole.{{ .Values.network.domain }}"
