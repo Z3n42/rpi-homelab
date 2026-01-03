@@ -115,7 +115,7 @@ fi
 # Install K3s (Lightweight Kubernetes)
 if ! command -v k3s &> /dev/null; then
     echo "    - Installing K3s..."
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik" sh -
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb" sh -
     
     mkdir -p $REAL_HOME/.kube
     cp /etc/rancher/k3s/k3s.yaml $REAL_HOME/.kube/config
@@ -125,18 +125,22 @@ if ! command -v k3s &> /dev/null; then
 else
     echo "    - K3s already installed."
     
-    if [ -f /etc/rancher/k3s/config.yaml ] && ! grep -q "disable:.*traefik" /etc/rancher/k3s/config.yaml; then
-         echo -e "${YELLOW}⚠️  Detected default Traefik. Disabling it to avoid conflicts...${NC}"
-         mkdir -p /etc/rancher/k3s
-         echo "disable:" >> /etc/rancher/k3s/config.yaml
-         echo "  - traefik" >> /etc/rancher/k3s/config.yaml
+    if [ ! -f /etc/rancher/k3s/config.yaml ] || ! grep -q "disable:.*traefik" /etc/rancher/k3s/config.yaml || ! grep -q "disable:.*servicelb" /etc/rancher/k3s/config.yaml; then
+         echo -e "${YELLOW}⚠️  Updating K3s config to disable Traefik and ServiceLB...${NC}"
+         
+         cat > /etc/rancher/k3s/config.yaml <<EOF
+disable:
+  - traefik
+  - servicelb
+EOF
          systemctl restart k3s
          echo "    - Waiting for K3s restart..."
          sleep 15
-         # Limpieza de zombies
-         /usr/local/bin/kubectl delete ingressclass traefik --ignore-not-found=true 2>/dev/null
-         /usr/local/bin/kubectl delete ns traefik-system --ignore-not-found=true 2>/dev/null
-         echo "✅ Default Traefik disabled and cleaned."
+         
+         /usr/local/bin/kubectl delete daemonset -n kube-system -l svccontroller.k3s.cattle.io/svcname=pihole-web --ignore-not-found=true
+         /usr/local/bin/kubectl delete daemonset -n kube-system -l svccontroller.k3s.cattle.io/svcname=pihole-dns --ignore-not-found=true
+         
+         echo "✅ Default Traefik and ServiceLB disabled and cleaned."
     fi
 fi
 
