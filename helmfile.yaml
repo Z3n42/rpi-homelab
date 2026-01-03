@@ -46,23 +46,33 @@ releases:
     chart: longhorn/longhorn
     values: [values/longhorn.yaml]
 
+  - name: traefik-crds
+    namespace: traefik-system
+    createNamespace: true
+    chart: traefik/traefik
+    version: "28.1.0"
+    values:
+      - installationCRDs: true
+      - core:
+          enabled: false
+
   - name: traefik
     namespace: traefik-system
     createNamespace: true
     chart: traefik/traefik
     version: "28.1.0"
-    needs: [metallb-system/metallb-config]
+    needs: [traefik-system/traefik-crds, metallb-system/metallb-config]
     hooks:
-      - events: [postsync]
+      - events: [presync]
         showlogs: true
         command: "sh"
         args:
           - "-c"
           - |
-            echo "=== Waiting Traefik CRDs ==="
-            sleep 15
-            kubectl wait --for=condition=Established crd/middlewares.traefik.io --timeout=60s || echo "CRDs might be delayed"
+            echo "=== Verifying Traefik CRDs before App Sync ==="
+            kubectl wait --for=condition=Established crd/ingressroutes.traefik.io --timeout=60s
     values:
+      - installationCRDs: false# Solo instalamos los CRDs aquí
       - providers:
           kubernetesCRD:
             enabled: true

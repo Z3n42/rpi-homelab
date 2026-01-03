@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-#  RPI 5 HOMELAB - MASTER SETUP WIZARD (INTEGRATED VERSION)
-#  Includes: Boot Checks, K3s Repair, Helm, SOPS, Age, and Auto-GitOps Setup
+#  RPI 5 HOMELAB - MASTER SETUP WIZARD
 # ==============================================================================
 
 # Colors
@@ -60,16 +59,13 @@ fi
 echo -e "\n${GREEN}--> [1/5] Installing System Dependencies...${NC}"
 
 apt update -qq && apt install -y curl wget git htop vim open-iscsi nfs-common age jq > /dev/null
-
-echo "    - Enabling storage services (iSCSI/NFS)..."
 systemctl enable --now iscsid rpcbind nfs-client.target
 
-# Network Config
 ZENPI_IP=$(awk '/zenpi_ip/{print $2; exit}' values/network.yaml | tr -d '"')
 
 if [ -n "$ZENPI_IP" ]; then
   echo -e "${GREEN}Configuring static IP $ZENPI_IP via netplan...${NC}"
-  NETPLAN_FILE="/etc/plan/01-zenpi.yaml"
+  NETPLAN_FILE="/etc/netplan/01-zenpi.yaml"
   cat > "$NETPLAN_FILE" <<EOF
 network:
   version: 2
@@ -92,7 +88,7 @@ EOF
 fi
 
 # ------------------------------------------------------------------------------
-# PHASE 1.5: K3s REPAIR & CONFIGURATION (THE FIX)
+# PHASE 1.5: K3s REPAIR & CONFIGURATION
 # ------------------------------------------------------------------------------
 echo -e "\n${GREEN}--> [K3s] Synchronizing Engine Configuration...${NC}"
 
@@ -107,7 +103,6 @@ else
     echo "    - K3s already installed."
 fi
 
-# Crear config.yaml declarativo (Sin caracteres raros)
 mkdir -p /etc/rancher/k3s
 cat <<'EOF' > /etc/rancher/k3s/config.yaml
 disable:
@@ -115,22 +110,20 @@ disable:
   - servicelb
 EOF
 
-# Reparar archivo de servicio de systemd (Limpiar ExecStart corrupto)
 if [ -f /etc/systemd/system/k3s.service ]; then
     echo "    - Verifying k3s.service integrity..."
-    # Si la línea tiene barras invertidas o flags duplicadas, la reseteamos
     if grep -q "ExecStart=.*\\\\" /etc/systemd/system/k3s.service || grep -q "disable" /etc/systemd/system/k3s.service; then
         echo -e "${YELLOW}⚠️  Fixing ExecStart in k3s.service...${NC}"
         sed -i 's|^ExecStart=.*|ExecStart=/usr/local/bin/k3s server|' /etc/systemd/system/k3s.service
         systemctl daemon-reload
+        systemctl restart k3s
+        sleep 10
     fi
-    systemctl restart k3s
-    sleep 10
 fi
 
-# Limpiar DaemonSets de ServiceLB (Zombies)
-if command -v kubectl &> /dev/null; then
+if command -v kubectl &> /dev/null && [ -f /etc/rancher/k3s/k3s.yaml ]; then
     echo "    - Cleaning residual LoadBalancer pods..."
+    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
     kubectl delete daemonset -n kube-system -l svccontroller.k3s.cattle.io/svcname=pihole-dns --ignore-not-found=true 2>/dev/null
     kubectl delete daemonset -n kube-system -l svccontroller.k3s.cattle.io/svcname=pihole-web --ignore-not-found=true 2>/dev/null
     kubectl delete daemonset -n kube-system -l svccontroller.k3s.cattle.io/svcname=traefik --ignore-not-found=true 2>/dev/null
@@ -193,8 +186,7 @@ read -p "Select option [1 or 2]: " MODE
 
 if [ "$MODE" == "1" ]; then
     echo -e "\n${GREEN}--> [Local Mode] Applying Helmfile...${NC}"
-    export SOPS_AGE_KEY_FILE=$KEY_FILE
-    sudo -u $REAL_USER SOPS_AGE_KEY_FILE=$KEY_FILE helmfile apply
+    sudo -u $REAL_USER SOPS_AGE_KEY_FILE=$KEY_FILE KUBECONFIG=$REAL_HOME/.kube/config /usr/local/bin/helmfile apply
     
 elif [ "$MODE" == "2" ]; then
     echo -e "\n${GREEN}--> [GitOps Mode] Setting up GitHub Runner...${NC}"
