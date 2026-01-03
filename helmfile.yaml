@@ -122,6 +122,9 @@ releases:
     values:
       - controllers:
           main:
+            type: deployment
+            annotations:
+              reloader.stakater.com/auto: "true"
             pod:
               hostNetwork: true
             containers:
@@ -133,12 +136,22 @@ releases:
                   TZ: "Europe/Madrid"
                   PGID: "1000"
                   PUID: "1000"
+                  HOMEBRIDGE_CONFIG_UI: "1"
+                  HOMEBRIDGE_CONFIG_UI_PORT: "8581"
+        
       - service:
           main:
             controller: main
+            type: LoadBalancer
+            annotations:
+              metallb.universe.tf/address-pool: pihole-pool
+              metallb.universe.tf/loadBalancerIPs: "{{ .Values.network.services.homebridge.ip }}"
             ports:
               http:
                 port: 8581
+              hap:
+                port: 51826
+
       - persistence:
           config:
             enabled: true
