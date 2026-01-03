@@ -204,7 +204,7 @@ resources:
     spec:
       selector:
         app: pihole
-      type: LoadBalancer
+      type: ClusterIP
       loadBalancerIP: "{{ .Values.network.services.pihole.web_ip }}"
       ports:
         - name: http

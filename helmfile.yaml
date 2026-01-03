@@ -149,6 +149,14 @@ releases:
           defaultTags:
             - tag:server
 
+  - name: traefik-resources
+    chart: bedag/raw
+    namespace: traefik-system
+    needs: [traefik-system/traefik]
+    values:
+      - resources:
+          - {{ readFile "manifests/traefik/traefik-dashboard.yaml.gotmpl" | fromYaml | toYaml | indent 12 | trim }}
+
   - name: cleanup-tools
     chart: bedag/raw
     namespace: kube-system
