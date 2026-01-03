@@ -8,6 +8,7 @@ network:
     pihole:
       primary_ip: "192.168.1.53"
       backup_ip: "192.168.1.54"
+      web_ip: "192.168.1.52"
     homebridge:
       ip: "192.168.1.55"
     traefik:

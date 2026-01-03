@@ -3,8 +3,8 @@ repositories:
     url: https://metallb.github.io/metallb
   - name: longhorn
     url: https://charts.longhorn.io
-  - name: mojo2600
-    url: https://mojo2600.github.io/pihole-kubernetes/
+  # - name: mojo2600  <-- YA NO LO NECESITAS (Adiós Pi-hole legacy)
+  #   url: https://mojo2600.github.io/pihole-kubernetes/
   - name: tailscale
     url: https://pkgs.tailscale.com/helmcharts
   - name: bjw-s
@@ -53,24 +53,13 @@ releases:
     hooks:
       - events: [postsync]
         showlogs: true
-        command: "kubectl"
-        args: 
-          - "wait"
-          - "--namespace=traefik-system"
-          - "--for=condition=Available"
-          - "deployment/traefik"
-          - "--timeout=120s"
-      - events: [postsync]
-        showlogs: true
         command: "sh"
         args:
           - "-c"
           - |
             echo "=== Waiting Traefik CRDs ==="
-            sleep 20  # Kubernetes necesita tiempo para registrar CRDs
-            kubectl get crd | grep traefik || echo "CRDs not visible yet"
-            kubectl wait --for=condition=Established crd/middlewares.traefik.io --timeout=45s || echo "Middleware CRD ready enough"
-            echo "CRDs ready for pihole-manifests"
+            sleep 15
+            kubectl wait --for=condition=Established crd/middlewares.traefik.io --timeout=60s || echo "CRDs might be delayed"
     values:
       - providers:
           kubernetesCRD:
@@ -102,77 +91,20 @@ releases:
           size: 1Gi
       - installationCRDs: true
 
-  - name: unbound
-    namespace: pihole
-    chart: bjw-s/app-template
-    needs: [metallb-system/metallb]
-    values:
-      - controllers:
-          main:
-            replicas: 1
-            containers:
-              main:
-                image:
-                  repository: klutchell/unbound
-                  tag: latest
-                env:
-                  TZ: Europe/Madrid
-                ports:
-                  - name: dns
-                    containerPort: 5335
-                    protocol: UDP
-                  - name: dns-tcp
-                    containerPort: 5335
-                    protocol: TCP
-      - service:
-          main:
-            type: ClusterIP
-            ports:
-              dns:
-                port: 5335
-                protocol: UDP
-              dns-tcp:
-                port: 5335
-                protocol: TCP
-
-  - name: pihole
-    namespace: pihole
-    chart: mojo2600/pihole
-    needs: [metallb-system/metallb, longhorn-system/longhorn, pihole/unbound]
-    secrets: [secrets/app.sops.yaml]
-    values: [values/pihole.yaml.gotmpl]
-
-  - name: pihole-dns-backup
+  - name: pihole-stack
     namespace: pihole
     chart: bedag/raw
-    needs: [pihole/pihole]
+    createNamespace: true
+    needs: 
+      - metallb-system/metallb
+      - longhorn-system/longhorn
+      - traefik-system/traefik 
+      
+    secrets: [secrets/app.sops.yaml]
+  
     values:
       - resources:
-          - apiVersion: v1
-            kind: Service
-            metadata:
-              name: pihole-dns-backup
-            spec:
-              type: LoadBalancer
-              loadBalancerIP: {{ .Values.network.services.pihole.backup_ip }}
-              selector:
-                app.kubernetes.io/name: pihole
-              ports:
-              - name: dns-tcp-backup
-                port: 53
-                targetPort: 53
-                protocol: TCP
-              - name: dns-udp-backup
-                port: 53
-                targetPort: 53
-                protocol: UDP
-
-  - name: pihole-manifests
-    namespace: pihole
-    chart: bedag/raw
-    needs: [pihole/pihole, traefik-system/traefik]
-    values:
-      - values/pihole-manifests.yaml.gotmpl
+          - manifests/pihole/pihole-unbound-v6.yaml
 
   - name: homebridge
     namespace: homebridge
@@ -231,4 +163,3 @@ releases:
           - |
             echo "🚨 Emergency cleanup available"
             echo "  helmfile destroy --selector name=longhorn"
-            echo "  helmfile destroy --selector name=metallb"

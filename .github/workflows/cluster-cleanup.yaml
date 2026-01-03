@@ -4,67 +4,90 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: '⚠️  TYPE "CONFIRM-CLEANUP" to proceed'
+        description: '⚠️ TYPE "CONFIRM-CLEANUP" to proceed'
         required: true
         default: ''
       target:
-        description: 'What to clean? (all/longhorn/metallb/pihole/none)'
-        default: 'all'
+        description: 'What to clean?'
+        default: 'pihole'
         type: choice
         options: 
           - 'all'
-          - 'longhorn'
-          - 'metallb'
           - 'pihole'
-          - 'none'
+          - 'metallb'
+          - 'longhorn'
+          - 'traefik'
 
 jobs:
   cleanup:
     runs-on: self-hosted
     steps:
       - name: 🚨 SAFETY CHECK
-        if: github.event.inputs.confirm != 'CONFIRM-CLEANUP'
+        if: inputs.confirm != 'CONFIRM-CLEANUP'
         run: |
-          echo "❌ ABORTED: Type 'CONFIRM-CLEANUP' in the confirmation field!"
+          echo "❌ ABORTED: You must type 'CONFIRM-CLEANUP'!"
           exit 1
 
-      - name: Check out code
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: 🧹 TOTAL CLEANUP
+      - name: 🧹 Execute Cleanup
         run: |
-          echo "🚨 CLUSTER CLEANUP INITIATED"
-          echo "Target: ${{ github.event.inputs.target }}"
-          
-          case "${{ github.event.inputs.target }}" in
+          TARGET="${{ inputs.target }}"
+          echo "🔥 STARTING CLEANUP: $TARGET"
+
+          clean_ns() {
+            NS=$1
+            if kubectl get ns $NS > /dev/null 2>&1; then
+              echo "Deleting namespace $NS..."
+              kubectl delete ns $NS --timeout=60s || {
+                echo "⚠️ Namespace stuck? Removing finalizers..."
+                kubectl get ns $NS -o json | jq '.spec.finalizers=[]' | kubectl replace --raw "/api/v1/namespaces/$NS/finalize" -f -
+              }
+            fi
+          }
+
+          case "$TARGET" in
             "all")
-              echo "🧹 Cleaning ALL releases..."
+              echo "💥 DESTROYING EVERYTHING (Except System)..."
               helmfile destroy --all || true
-              kubectl delete ns --all --force --grace-period=0 || true
-              sleep 10
-              kubectl delete crd --all || true
-              ;;
               
-            "longhorn")
-              echo "🧹 Cleaning Longhorn..."
-              helm -n longhorn-system uninstall longhorn --no-hooks || true
-              kubectl delete ns longhorn-system --force --grace-period=0 || true
-              kubectl delete crd -l app.kubernetes.io/name=longhorn || true
+              kubectl get ns --no-headers -o custom-columns=:metadata.name | \
+                grep -vE 'kube-system|default|kube-public|kube-node-lease' | \
+                xargs -r kubectl delete ns --force --grace-period=0
               ;;
-              
+
+            "pihole")
+              echo "🧹 Cleaning Pi-hole & Unbound..."
+              helmfile --selector name=pihole destroy || true
+              helmfile --selector name=unbound destroy || true
+              helm uninstall -n pihole pihole unbound || true
+              clean_ns "pihole"
+              ;;
+
             "metallb")
               echo "🧹 Cleaning MetalLB..."
-              helm -n metallb-system uninstall metallb --no-hooks || true
-              kubectl delete ns metallb-system --force --grace-period=0 || true
-              kubectl delete crd -l app=metallb || true
+              helmfile --selector name=metallb destroy || true
+              helm uninstall -n metallb-system metallb || true
+              clean_ns "metallb-system"
               ;;
-              
-            "pihole")
-              echo "🧹 Cleaning Pi-hole..."
-              helm -n pihole uninstall unbound pihole --no-hooks || true
-              kubectl delete ns pihole --force --grace-period=0 || true
+
+            "longhorn")
+              echo "🧹 Cleaning Longhorn..."
+              helmfile --selector name=longhorn destroy || true
+              kubectl -n longhorn-system patch -p '{"metadata":{"finalizers":[]}}' type=merge p pod --all || true
+              clean_ns "longhorn-system"
               ;;
+            
+            "traefik")
+               echo "🧹 Cleaning Traefik..."
+               helmfile --selector name=traefik destroy || true
+               clean_ns "traefik-system"
+               ;;
           esac
-          
-          echo "✅ Cleanup completed!"
-          echo "🔄 Ready for fresh deploy with: helmfile sync"
+
+          echo "🗑️ Pruning Orphaned Resources..."
+          kubectl delete pod --field-selector=status.phase==Failed -A || true
+          kubectl delete pod --field-selector=status.phase==Succeeded -A || true
+
+          echo "✅ CLEANUP COMPLETED!"
