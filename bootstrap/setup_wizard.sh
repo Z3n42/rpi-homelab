@@ -83,6 +83,7 @@ ZENPI_IP=$(awk '/zenpi_ip/{print $2; exit}' values/network.yaml | tr -d '"')
 
 if [ -n "$ZENPI_IP" ]; then
   echo -e "${GREEN}Configuring static IP $ZENPI_IP via netplan...${NC}"
+  rm -f /etc/netplan/*.yaml
   NETPLAN_FILE="/etc/netplan/01-zenpi.yaml"
 
   cat > "$NETPLAN_FILE" <<EOF
