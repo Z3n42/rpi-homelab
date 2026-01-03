@@ -35,17 +35,23 @@ jobs:
           helmfile --version
           sops --version
 
-          
+      - name: 🚑 Fix Traefik Conflicts
+        run: |
+          if kubectl get ingressclass traefik -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}' | grep -q "Helm"; then
+             CURRENT_NS=$(kubectl get ingressclass traefik -o jsonpath='{.metadata.annotations.meta\.helm\.sh/release-namespace}')
+             if [ "$CURRENT_NS" == "kube-system" ]; then
+                echo "⚠️ Found zombie Traefik IngressClass from kube-system. Deleting..."
+                kubectl delete ingressclass traefik --ignore-not-found=true
+             else
+                echo "✅ Traefik IngressClass is owned by $CURRENT_NS. All good."
+             fi
+          fi
+
       - name: 🚀 Deploy with Helmfile
-        env:
-          PIHOLE_IP: "192.168.1.10"
-          HOMEBRIDGE_IP: "192.168.1.14"
-          TAILSCALE_IP: "192.168.1.15"
         run: |
           LOGFILE="/home/pi/logs/deploy.log"
           
           {
-            echo "========================================================"
             echo "🚀 START DEPLOY: $(date '+%Y-%m-%d %H:%M:%S')"
             echo "Commit: ${{ github.sha }}"
             echo "Message: ${{ github.event.head_commit.message }}"
@@ -54,13 +60,12 @@ jobs:
           
           set -o pipefail
           
-          echo "🎯 PASO 1: Bootstrap MetalLB (CRDs)..." | tee -a $LOGFILE
+          echo "🎯 Bootstrap MetalLB (CRDs)..." | tee -a $LOGFILE
           helmfile sync --selector name=metallb 2>&1 | tee -a $LOGFILE
+          helmfile sync --selector name=longhorn 2>&1 | tee -a $LOGFILE
           
-          echo "✅ MetalLB CRDs instalados. Verificando..." | tee -a $LOGFILE
-          kubectl get crd | grep metallb | tee -a $LOGFILE
-          
-          echo "🎯 PASO 2: Deploy completo (Pi-hole + todo)..." | tee -a $LOGFILE
+          # 2. Sincronizar todo lo demás
+          echo "🎯 Syncing Application Stack..." | tee -a $LOGFILE
           helmfile sync 2>&1 | tee -a $LOGFILE
           
           STATUS=$?
@@ -71,8 +76,7 @@ jobs:
             echo "🔍 Verificando Pi-hole DNS IP..." | tee -a $LOGFILE
             kubectl get svc -n pihole | grep LoadBalancer | tee -a $LOGFILE
           else
-            echo "❌ FAILED (Exit Code: $STATUS): $(date '+%Y-%m-%d %H:%M:%S')" | tee -a $LOGFILE
-            echo "Check log at $LOGFILE for details."
+            echo "❌ FAILED (Exit Code: $STATUS)" | tee -a $LOGFILE
             exit $STATUS
           fi
           echo "========================================================" | tee -a $LOGFILE
@@ -81,8 +85,7 @@ jobs:
       - name: 🔍 Final Health Check
         if: success()
         run: |
-          echo "🎯 Health Check:"
-          kubectl get svc -n pihole | grep LoadBalancer
-          kubectl get ingress -n pihole
-          kubectl get pods -n traefik-system -n pihole | grep -E "(Running|Ready)"
-          curl -k -H "Host: pihole.home.lan" http://192.168.1.50 || echo "Web test (ignore if TLS)"
+          echo "🎯 IP Status:"
+          kubectl get svc -A | grep LoadBalancer
+          echo "🎯 Pod Status (Errors only):"
+          kubectl get pods -A | grep -v "Running\|Completed" || echo "All pods running!"

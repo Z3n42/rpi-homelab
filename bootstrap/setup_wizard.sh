@@ -109,7 +109,8 @@ fi
 # Install K3s (Lightweight Kubernetes)
 if ! command -v k3s &> /dev/null; then
     echo "    - Installing K3s..."
-    curl -sfL https://get.k3s.io | sh -
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik" sh -
+    
     mkdir -p $REAL_HOME/.kube
     cp /etc/rancher/k3s/k3s.yaml $REAL_HOME/.kube/config
     chown $REAL_USER:$REAL_USER $REAL_HOME/.kube/config
@@ -117,6 +118,20 @@ if ! command -v k3s &> /dev/null; then
     echo "export KUBECONFIG=$REAL_HOME/.kube/config" >> $REAL_HOME/.bashrc
 else
     echo "    - K3s already installed."
+    
+    if [ -f /etc/rancher/k3s/config.yaml ] && ! grep -q "disable:.*traefik" /etc/rancher/k3s/config.yaml; then
+         echo -e "${YELLOW}⚠️  Detected default Traefik. Disabling it to avoid conflicts...${NC}"
+         mkdir -p /etc/rancher/k3s
+         echo "disable:" >> /etc/rancher/k3s/config.yaml
+         echo "  - traefik" >> /etc/rancher/k3s/config.yaml
+         systemctl restart k3s
+         echo "    - Waiting for K3s restart..."
+         sleep 15
+         # Limpieza de zombies
+         /usr/local/bin/kubectl delete ingressclass traefik --ignore-not-found=true 2>/dev/null
+         /usr/local/bin/kubectl delete ns traefik-system --ignore-not-found=true 2>/dev/null
+         echo "✅ Default Traefik disabled and cleaned."
+    fi
 fi
 
 # Install Helm (Package Manager)
