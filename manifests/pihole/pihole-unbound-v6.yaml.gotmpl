@@ -95,15 +95,19 @@ resources:
                 - sh
                 - -c
                 - |
+                  rm -f /etc/pihole/dnsmasq.conf
+                  rm -f /etc/pihole/setupVars.conf
+                  rm -f /etc/dnsmasq.d/*
                   mkdir -p /etc/pihole
-                  rm -f /etc/pihole/pihole.toml
                   cp /tmp/source/pihole.toml /etc/pihole/pihole.toml
                   chown -R 1000:1000 /etc/pihole
               volumeMounts:
-                - name: storage
-                  mountPath: /etc/pihole
-                - name: config-source
-                  mountPath: /tmp/source
+                - mountPath: /etc/pihole
+                  name: storage
+                - mountPath: /etc/dnsmasq.d
+                  name: storage
+                - mountPath: /tmp/source
+                  name: config-source
 
           containers:
             - name: pihole
