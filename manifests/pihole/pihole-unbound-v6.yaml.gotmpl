@@ -245,8 +245,6 @@ resources:
               env:
                 - name: TZ
                   value: "Europe/Madrid"
-                - name: FTLCONF_LOCAL_IPV4
-                  value: "{{ .Values.network.services.pihole.primary_ip }}"
                 - name: DNSMASQ_LISTENING
                   value: "all"
               ports:
