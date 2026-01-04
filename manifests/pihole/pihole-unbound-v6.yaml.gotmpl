@@ -112,6 +112,8 @@ resources:
               env:
                 - name: TZ
                   value: "Europe/Madrid"
+                - name: PIHOLE_TOML_ENABLED
+                  value: "true"
               ports:
                 - containerPort: 53
                   name: domain-udp
