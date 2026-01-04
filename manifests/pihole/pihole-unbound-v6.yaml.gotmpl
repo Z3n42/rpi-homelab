@@ -47,7 +47,6 @@ resources:
         dnssec = true
         [webserver]
         port = 80
-        password = "${WEBPASSWORD}"
         [adlists]
         sources = [
           "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
@@ -101,7 +100,7 @@ resources:
               image: pihole/pihole:latest
               imagePullPolicy: Always
               env:
-                - name: WEBPASSWORD
+                - name: FTL_WEB_PASSWORD
                   valueFrom:
                     secretKeyRef:
                       name: pihole-web-password
