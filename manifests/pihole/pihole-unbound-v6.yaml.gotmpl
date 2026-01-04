@@ -101,6 +101,7 @@ resources:
                   mountPath: /etc/pihole
                 - name: config-source
                   mountPath: /tmp/source
+
           containers:
             - name: pihole
               image: pihole/pihole:latest
@@ -118,23 +119,9 @@ resources:
                 - containerPort: 80
                   name: http
                   protocol: TCP
-            
-              lifecycle:
-                postStart:
-                  exec:
-                    command:
-                      - sh
-                      - -c
-                      - |
-                        until nc -z localhost 80; do sleep 1; done
-                        pihole setpassword "$(cat /etc/pihole-password/password)"
-
               volumeMounts:
                 - name: storage
                   mountPath: /etc/pihole
-                - name: pihole-password
-                  mountPath: /etc/pihole-password
-                  readOnly: true
               securityContext:
                 capabilities:
                   add: ["NET_ADMIN", "NET_RAW"]
@@ -161,6 +148,25 @@ resources:
                   add: ["NET_BIND_SERVICE"]
                 allowPrivilegeEscalation: false
 
+            - name: pihole-password-setter
+              image: pihole/pihole:latest
+              command:
+                - sh
+                - -c
+                - |
+                  echo "Esperando a que Pi-hole esté listo..."
+                  until nc -z localhost 80; do sleep 1; done
+                  echo "Aplicando password desde Secret..."
+                  pihole setpassword "$(cat /etc/pihole-password/password)"
+                  echo "Password aplicado. Durmiendo para no reiniciar el pod..."
+                  sleep infinity
+              volumeMounts:
+                - name: storage
+                  mountPath: /etc/pihole
+                - name: pihole-password
+                  mountPath: /etc/pihole-password
+                  readOnly: true
+
           volumes:
             - name: storage
               persistentVolumeClaim:
@@ -174,7 +180,6 @@ resources:
             - name: pihole-password
               secret:
                 secretName: pihole-web-password
-
 
   - apiVersion: v1
     kind: Service
@@ -263,3 +268,4 @@ resources:
       tls:
         - hosts:
             - "pihole.{{ .Values.network.domain }}"
+            
