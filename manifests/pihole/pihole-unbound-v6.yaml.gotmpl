@@ -46,6 +46,7 @@ resources:
         upstreams = ["127.0.0.1#5335"]
         dnssec = true
         [webserver]
+        api_password = "{{ .Values.pihole.adminPassword }}"
         port = 80
         [adlists]
         sources = [
