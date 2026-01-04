@@ -85,6 +85,8 @@ resources:
         metadata:
           labels:
             app: pihole
+          annotations:
+            secret-hash: "{{ .Values.pihole.adminPassword | sha256sum }}"
         spec:
           initContainers:
             - name: pihole-setup
@@ -268,4 +270,3 @@ resources:
       tls:
         - hosts:
             - "pihole.{{ .Values.network.domain }}"
-            
