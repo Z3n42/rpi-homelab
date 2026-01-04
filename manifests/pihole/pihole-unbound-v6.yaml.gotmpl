@@ -47,6 +47,7 @@ resources:
         dnssec = true
         [webserver]
         port = 80
+        pwhash = "{{ .Values.pihole.adminPasswordHash }}"
         [adlists]
         sources = [
           "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
@@ -87,29 +88,15 @@ resources:
             app: pihole
         spec:
           initContainers:
-            - name: pihole-password-setup  # ← NUEVO: Establece password PRIMERO
-              image: pihole/pihole:latest
-              command: 
-                - "sh"
-                - "-c"
+            - name: pihole-setup
+              image: busybox:1.36
+              command:
+                - sh
+                - -c
                 - |
-                  while [ ! -d /etc/pihole ]; do sleep 1; done
-                  echo "Estableciendo password Pi-hole..."
-                  pihole -a -p "$PASSWORD"
                   mkdir -p /etc/pihole
-                  if [ ! -f /etc/pihole/pihole.toml ]; then
-                    echo "Copiando config inicial..."
-                    cp /tmp/source/pihole.toml /etc/pihole/pihole.toml
-                  else
-                    echo "Config TOML ya existe, saltando copia."
-                  fi
+                  cp /tmp/source/pihole.toml /etc/pihole/pihole.toml
                   chown -R 1000:1000 /etc/pihole
-              env:
-                - name: PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: pihole-web-password
-                      key: password
               volumeMounts:
                 - name: storage
                   mountPath: /etc/pihole
@@ -120,11 +107,6 @@ resources:
               image: pihole/pihole:latest
               imagePullPolicy: Always
               env:
-                - name: FTL_CONF_webserver_api_password
-                  valueFrom:
-                    secretKeyRef:
-                      name: pihole-web-password
-                      key: password
                 - name: TZ
                   value: "Europe/Madrid"
               ports:
