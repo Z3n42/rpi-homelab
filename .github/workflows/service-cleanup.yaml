@@ -1,82 +1,100 @@
-name: 🧹 Service Cleanup (Keep Persistence)
+name: Deploy Homelab
 
 on:
+  push:
+    branches: [ "main" ]
   workflow_dispatch:
-    inputs:
-      confirm:
-        description: 'Services to cleanup (keep Longhorn volumes)'
-        required: true
-        default: 'all'
-        type: choice
-        options: 
-          - 'all'
-          - 'pihole'
-          - 'homebridge'
-          - 'tailscale'
-          - 'unbound'
-          - 'metallb-config'
 
 jobs:
-  cleanup:
+  deploy:
     runs-on: self-hosted
-    steps:
-      - name: 🚨 SAFETY CHECK
-        if: github.event.inputs.confirm != 'CONFIRM-SERVICE-CLEANUP'
-        run: |
-          echo "❌ ABORTED: Type 'CONFIRM-SERVICE-CLEANUP' in confirmation!"
-          exit 1
 
+    steps:
       - name: Check out code
         uses: actions/checkout@v3
 
-      - name: 🧹 Service Cleanup (Keep Persistence)
+      - name: 🧹 Log Rotation & Cleanup
         run: |
-          TARGET: ${{ github.event.inputs.target || 'all' }} 
-          echo "🧹 SERVICE CLEANUP - Longhorn volumes PRESERVED"
-          
-          cleanup_release() {
-            RELEASE_NAME=$1
-            echo "🧹 Cleaning release: $RELEASE_NAME"
-            helmfile destroy --selector name=$RELEASE_NAME || true
-          }
-          
-          cleanup_ns_safe() {
-            NS=$1
-            if kubectl get ns $NS >/dev/null 2>&1; then
-              echo "🧹 Deleting namespace $NS (services only)..."
-              kubectl delete deployments,statefulsets,jobs,services,configmaps,secrets,ingresses --all -n $NS || true
-            fi
-          }
+          LOG_DIR="/home/pi/logs"
+          mkdir -p $LOG_DIR
 
-          case "$TARGET" in
-            "all")
-              echo "🧹 Cleaning ALL services (except Longhorn/PVs)..."
-              for release in pihole-stack traefik homebridge tailscale; do
-                cleanup_release "$release"
-              done
-              ;;
-              
-            "pihole")
-              cleanup_release "pihole-stack"
-              cleanup_ns_safe "pihole"
-              ;;
-              
-            "homebridge")
-              cleanup_release "homebridge"
-              cleanup_ns_safe "homebridge"
-              ;;
-              
-            "tailscale")
-              cleanup_release "tailscale"
-              cleanup_ns_safe "tailscale"
-              ;;
-              
-            "metallb-config")
-              cleanup_release "metallb-config"
-              ;;
-          esac
-          
-          echo "✅ Services cleaned!"
-          echo "💾 Longhorn volumes intactos:"
-          kubectl get pvc -A | grep longhorn || echo "No PVCs"
-          echo "🔄 Ready for: helmfile apply"
+          echo "--- 🔄 Starting Log Rotation ---"
+
+          if [ -f "$LOG_DIR/deploy.log" ]; then
+             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+             mv "$LOG_DIR/deploy.log" "$LOG_DIR/archive-deploy-$TIMESTAMP.log"
+             echo "Previous log archived: archive-deploy-$TIMESTAMP.log"
+          fi
+
+          find $LOG_DIR -name "archive-deploy-*.log" -mtime +30 -type f -delete
+          echo "Old logs (>30 days) deleted."
+
+      - name: 🔍 Verify Environment
+        run: |
+          kubectl version --client
+          helmfile --version
+          sops --version
+
+      - name: 🧼 Clean Pi-hole Services (safe, no persistence deletion)
+        run: |
+          echo "🧼 Cleaning Pi-hole services and workloads..."
+
+          # Delete Deployments and Jobs
+          kubectl delete deploy pihole-v6 -n pihole --ignore-not-found
+          kubectl delete job pihole-v6-init -n pihole --ignore-not-found
+
+          # Delete Services
+          kubectl delete svc pihole-dns -n pihole --ignore-not-found
+          kubectl delete svc pihole-web -n pihole --ignore-not-found
+
+          # Remove LoadBalancer finalizers if stuck
+          for svc in pihole-dns pihole-web; do
+            if kubectl get svc $svc -n pihole >/dev/null 2>&1; then
+              echo "🔨 Removing finalizers from $svc..."
+              kubectl get svc $svc -n pihole -o json \
+                | jq 'del(.metadata.finalizers)' \
+                | kubectl replace --raw "/api/v1/namespaces/pihole/services/$svc/finalize" -f - || true
+            fi
+          done
+
+          echo "🧼 Cleanup complete. PVCs and namespace preserved."
+
+      - name: 🚀 Deploy with Helmfile
+        run: |
+          LOGFILE="/home/pi/logs/deploy.log"
+
+          {
+            echo "🚀 START DEPLOY: $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "Commit: ${{ github.sha }}"
+            echo "Message: ${{ github.event.head_commit.message }}"
+            echo "--------------------------------------------------------"
+          } | tee -a $LOGFILE
+
+          set -o pipefail
+
+          echo "🎯 Bootstrap MetalLB (CRDs)..." | tee -a $LOGFILE
+          helmfile sync --selector name=metallb 2>&1 | tee -a $LOGFILE
+          helmfile sync --selector name=longhorn 2>&1 | tee -a $LOGFILE
+
+          echo "🎯 Syncing Application Stack..." | tee -a $LOGFILE
+          helmfile sync 2>&1 | tee -a $LOGFILE
+
+          STATUS=$?
+
+          echo "--------------------------------------------------------" | tee -a $LOGFILE
+          if [ $STATUS -eq 0 ]; then
+            echo "✅ SUCCESS: Deployment finished at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a $LOGFILE
+            kubectl get svc -n pihole | grep LoadBalancer | tee -a $LOGFILE
+          else
+            echo "❌ FAILED (Exit Code: $STATUS)" | tee -a $LOGFILE
+            exit $STATUS
+          fi
+          echo "========================================================" | tee -a $LOGFILE
+
+      - name: 🔍 Final Health Check
+        if: success()
+        run: |
+          echo "🎯 LoadBalancer Services:"
+          kubectl get svc -A | grep LoadBalancer
+          echo "🎯 Pod Status (Errors only):"
+          kubectl get pods -A | grep -v "Running\|Completed" || echo "All pods running!"

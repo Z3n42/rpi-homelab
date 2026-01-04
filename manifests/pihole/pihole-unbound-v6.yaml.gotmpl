@@ -262,32 +262,34 @@ resources:
                   mountPath: /etc/pihole
                 - name: dnsmasq-storage
                   mountPath: /etc/dnsmasq.d
-              securityContext:
-                capabilities:
-                  add: ["NET_ADMIN"]
-              resources:
-                requests:
-                  cpu: "100m"
-                  memory: "256Mi"
-                limits:
-                  cpu: "500m"
-                  memory: "512Mi"
-              livenessProbe:
-                httpGet:
-                  path: /admin/
-                  port: 80
-                initialDelaySeconds: 60
-                periodSeconds: 30
-                timeoutSeconds: 5
-                failureThreshold: 3
-              readinessProbe:
-                httpGet:
-                  path: /admin/
-                  port: 80
-                initialDelaySeconds: 30
-                periodSeconds: 10
-                timeoutSeconds: 3
-                failureThreshold: 3
+                - name: pihole-password
+                  mountPath: /etc/pihole-password
+                  readOnly: true
+              lifecycle:
+                postStart:
+                  exec:
+                    command:
+                      - sh
+                      - -c
+                      - |
+                        echo "[postStart] Waiting for FTL socket..."
+                        for i in $(seq 1 60); do
+                          if [ -S /run/pihole-ftl/pihole-FTL.sock ]; then
+                            echo "[postStart] FTL socket detected"
+                            break
+                          fi
+                          sleep 1
+                        done
+
+                        if [ ! -S /run/pihole-ftl/pihole-FTL.sock ]; then
+                          echo "[postStart] ERROR: FTL socket not found after 60s"
+                          exit 1
+                        fi
+
+                        PASSWORD=$(cat /etc/pihole-password/password)
+                        echo "[postStart] Setting admin password..."
+                        pihole setpasswd "$PASSWORD"
+                        echo "[postStart] Password applied successfully"
 
             - name: unbound
               image: crazymax/unbound:1.24.0
@@ -324,56 +326,6 @@ resources:
                 periodSeconds: 10
                 timeoutSeconds: 2
                 failureThreshold: 3
-
-            - name: pihole-password-setter
-              image: pihole/pihole:2025.11.1
-              imagePullPolicy: IfNotPresent
-              command:
-                - sh
-                - -c
-                - |
-                  echo "Waiting for Pi-hole HTTP..."
-                  until nc -z localhost 80; do sleep 1; done
-
-                  echo "Waiting for FTL..."
-                  while [ ! -S /run/pihole-ftl/pihole-FTL.sock ]; do
-                    echo "FTL not ready..."
-                    sleep 2
-                  done
-
-                  echo "Setting admin password declaratively..."
-                  PASSWORD=$(cat /etc/pihole-password/password)
-                  pihole setpassword "$PASSWORD"
-
-                  echo "Password applied. Keeping container alive..."
-                  sleep infinity
-              volumeMounts:
-                - name: pihole-storage
-                  mountPath: /etc/pihole
-                - name: pihole-password
-                  mountPath: /etc/pihole-password
-                  readOnly: true
-              resources:
-                requests:
-                  cpu: "10m"
-                  memory: "32Mi"
-                limits:
-                  cpu: "50m"
-                  memory: "64Mi"
-
-          volumes:
-            - name: pihole-storage
-              persistentVolumeClaim:
-                claimName: pihole-pvc-v6
-            - name: dnsmasq-storage
-              persistentVolumeClaim:
-                claimName: pihole-dnsmasq-pvc
-            - name: unbound-conf
-              configMap:
-                name: unbound-config
-            - name: pihole-password
-              secret:
-                secretName: pihole-web-password
 
   - apiVersion: v1
     kind: Service
