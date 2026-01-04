@@ -38,6 +38,35 @@ jobs:
           TARGET="${{ inputs.target }}"
           echo "🔥 STARTING CLEANUP: $TARGET"
 
+          ###############################################
+          # SAFE SERVICE CLEANUP (PVCs PRESERVED)
+          ###############################################
+          cleanup_services() {
+            NS=$1
+
+            echo "🧹 Cleaning services in namespace: $NS"
+
+            # Delete Deployments and Jobs
+            kubectl delete deploy --all -n $NS --ignore-not-found=true || true
+            kubectl delete job --all -n $NS --ignore-not-found=true || true
+
+            # Clean Service finalizers
+            for svc in $(kubectl get svc -n $NS -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+              echo "🧹 Cleaning Service: $svc"
+              kubectl get svc $svc -n $NS -o json \
+                | jq 'del(.metadata.finalizers)' \
+                | kubectl replace --raw "/api/v1/namespaces/$NS/services/$svc/finalize" -f - || true
+            done
+
+            # Delete Services normally
+            kubectl delete svc --all -n $NS --ignore-not-found=true || true
+
+            echo "✅ Services cleaned in namespace: $NS (PVCs preserved)"
+          }
+
+          ###############################################
+          # FULL NAMESPACE DELETE (DANGEROUS)
+          ###############################################
           force_delete_ns() {
             NS=$1
 
@@ -47,7 +76,6 @@ jobs:
             fi
 
             echo "⏳ Deleting namespace $NS..."
-
             kubectl delete ns $NS --wait=false || true
 
             echo "🧨 Deleting all resources inside $NS..."
@@ -55,16 +83,16 @@ jobs:
             kubectl delete pvc --all -n $NS --force --grace-period=0 || true
 
             echo "🧨 Deleting LoadBalancer Services finalizers..."
-            for svc in $(kubectl get svc -n $NS -o jsonpath='{.items[*].metadata.name}'); do
-              kubectl get svc $svc -n $NS -o json | \
-                jq 'del(.metadata.finalizers)' | \
-                kubectl replace --raw "/api/v1/namespaces/$NS/services/$svc/finalize" -f - || true
+            for svc in $(kubectl get svc -n $NS -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+              kubectl get svc $svc -n $NS -o json \
+                | jq 'del(.metadata.finalizers)' \
+                | kubectl replace --raw "/api/v1/namespaces/$NS/services/$svc/finalize" -f - || true
             done
 
             echo "🔨 Removing namespace finalizers..."
-            kubectl get ns $NS -o json | \
-              jq 'del(.spec.finalizers)' | \
-              kubectl replace --raw "/api/v1/namespaces/$NS/finalize" -f - || true
+            kubectl get ns $NS -o json \
+              | jq 'del(.spec.finalizers)' \
+              | kubectl replace --raw "/api/v1/namespaces/$NS/finalize" -f - || true
 
             echo "⏳ Waiting for namespace to disappear..."
             for i in {1..10}; do
@@ -77,7 +105,11 @@ jobs:
             done
           }
 
+          ###############################################
+          # TARGET SELECTION
+          ###############################################
           case "$TARGET" in
+
             "pihole")
               echo "🧹 Cleaning Pi-hole Stack..."
               helmfile destroy --selector name=pihole-stack || true
@@ -112,6 +144,9 @@ jobs:
               ;;
           esac
 
+          ###############################################
+          # FINAL CLEANUP
+          ###############################################
           echo "🗑️ Pruning global orphans..."
           kubectl delete pod --field-selector=status.phase==Failed -A --ignore-not-found=true
           kubectl delete pod --field-selector=status.phase==Succeeded -A --ignore-not-found=true
