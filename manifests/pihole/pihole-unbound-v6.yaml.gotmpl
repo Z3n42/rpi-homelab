@@ -131,6 +131,8 @@ resources:
               volumeMounts:
                 - name: storage
                   mountPath: /etc/pihole
+                - name: storage
+                  mountPath: /etc/dnsmasq.d
               securityContext:
                 capabilities:
                   add: ["NET_ADMIN", "NET_RAW"]
