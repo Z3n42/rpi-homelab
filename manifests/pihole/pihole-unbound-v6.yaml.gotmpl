@@ -332,32 +332,20 @@ resources:
                 - sh
                 - -c
                 - |
-                  echo "Waiting for Pi-hole to be ready..."
-                  
-                  # Wait for HTTP port
-                  until nc -z localhost 80 2>/dev/null; do 
-                    echo "Waiting for port 80..."
+                  echo "Waiting for Pi-hole HTTP..."
+                  until nc -z localhost 80; do sleep 1; done
+
+                  echo "Waiting for FTL..."
+                  while [ ! -S /run/pihole-ftl/pihole-FTL.sock ]; do
+                    echo "FTL not ready..."
                     sleep 2
                   done
-                  echo "Port 80 is available"
-                  
-                  # Wait for FTL to be fully operational
-                  echo "Waiting for FTL to be fully started..."
-                  sleep 15
-                  
-                  # Configure password
-                  echo "Setting admin password..."
+
+                  echo "Setting admin password declaratively..."
                   PASSWORD=$(cat /etc/pihole-password/password)
-                  
-                  if pihole -a -p "$PASSWORD"; then
-                    echo "Password configured successfully"
-                  else
-                    echo "Failed to set password, retrying in 5s..."
-                    sleep 5
-                    pihole -a -p "$PASSWORD"
-                  fi
-                  
-                  echo "Configuration complete. Keeping container alive..."
+                  pihole setpassword "$PASSWORD"
+
+                  echo "Password applied. Keeping container alive..."
                   sleep infinity
               volumeMounts:
                 - name: pihole-storage
