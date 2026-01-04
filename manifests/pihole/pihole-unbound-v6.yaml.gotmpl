@@ -47,7 +47,6 @@ resources:
         dnssec = true
         [webserver]
         port = 80
-        [webserver.api]
         [adlists]
         sources = [
           "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
@@ -108,11 +107,13 @@ resources:
               image: pihole/pihole:latest
               imagePullPolicy: Always
               env:
-                - name: FTL_CONF_webserver_api_password
+                - name: WEBPASSWORD
                   valueFrom:
                     secretKeyRef:
                       name: pihole-web-password
                       key: password
+                - name: TZ
+                  value: "Europe/Madrid"
               ports:
                 - containerPort: 53
                   name: domain-udp
