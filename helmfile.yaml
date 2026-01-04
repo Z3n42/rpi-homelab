@@ -43,8 +43,6 @@ releases:
     namespace: longhorn-system
     chart: longhorn/longhorn
     installed: true
-    force: false
-    resetValues: false
     values: [values/longhorn.yaml]
 
   - name: traefik-crds
