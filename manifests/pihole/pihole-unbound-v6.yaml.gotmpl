@@ -107,7 +107,7 @@ resources:
               image: pihole/pihole:latest
               imagePullPolicy: Always
               env:
-                - name: FTL_CONF_webserver_password
+                - name: FTL_CONF_webserver_api_password
                   valueFrom:
                     secretKeyRef:
                       name: pihole-web-password
