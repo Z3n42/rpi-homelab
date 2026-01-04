@@ -102,6 +102,20 @@ resources:
             secret-hash: "{{ .Values.pihole.adminPassword | sha256sum }}"
         spec:
           initContainers:
+            - name: wait-for-pvc
+              image: busybox
+              command:
+                - sh
+                - -c
+                - |
+                  while ! grep -qs "/etc/pihole" /proc/mounts; do
+                    echo "waiting for pvc..."
+                    sleep 1
+                  done
+              volumeMounts:
+                - mountPath: /etc/pihole
+                  name: pihole-storage
+
             - name: pihole-setup
               image: busybox:1.36
               command:
@@ -112,7 +126,6 @@ resources:
                   rm -f /etc/pihole/setupVars.conf
                   rm -f /etc/pihole/pihole-FTL.conf
                   rm -f /etc/dnsmasq.d/*
-                  mkdir -p /etc/pihole
                   cp /tmp/source/pihole.toml /etc/pihole/pihole.toml
                   chown -R 1000:1000 /etc/pihole
               volumeMounts:
@@ -179,11 +192,8 @@ resources:
                 - sh
                 - -c
                 - |
-                  echo "Esperando a que Pi-hole esté listo..."
                   until nc -z localhost 80; do sleep 1; done
-                  echo "Aplicando password desde Secret..."
                   pihole setpassword "$(cat /etc/pihole-password/password)"
-                  echo "Password aplicado. Durmiendo para no reiniciar el pod..."
                   sleep infinity
               volumeMounts:
                 - name: pihole-storage
