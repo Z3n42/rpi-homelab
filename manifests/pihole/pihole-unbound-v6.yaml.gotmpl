@@ -67,6 +67,19 @@ resources:
         requests:
           storage: 2Gi
 
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: pihole-dnsmasq-pvc
+      namespace: pihole
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      storageClassName: longhorn
+      resources:
+        requests:
+          storage: 100Mi
+
   - apiVersion: apps/v1
     kind: Deployment
     metadata:
@@ -103,9 +116,9 @@ resources:
                   chown -R 1000:1000 /etc/pihole
               volumeMounts:
                 - mountPath: /etc/pihole
-                  name: storage
+                  name: pihole-storage
                 - mountPath: /etc/dnsmasq.d
-                  name: storage
+                  name: dnsmasq-storage
                 - mountPath: /tmp/source
                   name: config-source
 
@@ -129,9 +142,9 @@ resources:
                   name: http
                   protocol: TCP
               volumeMounts:
-                - name: storage
+                - name: pihole-storage
                   mountPath: /etc/pihole
-                - name: storage
+                - name: dnsmasq-storage
                   mountPath: /etc/dnsmasq.d
               securityContext:
                 capabilities:
@@ -172,22 +185,29 @@ resources:
                   echo "Password aplicado. Durmiendo para no reiniciar el pod..."
                   sleep infinity
               volumeMounts:
-                - name: storage
+                - name: pihole-storage
                   mountPath: /etc/pihole
                 - name: pihole-password
                   mountPath: /etc/pihole-password
                   readOnly: true
 
           volumes:
-            - name: storage
+            - name: pihole-storage
               persistentVolumeClaim:
                 claimName: pihole-pvc-v6
+
+            - name: dnsmasq-storage
+              persistentVolumeClaim:
+                claimName: pihole-dnsmasq-pvc
+
             - name: config-source
               configMap:
                 name: pihole-v6-config
+
             - name: unbound-conf
               configMap:
                 name: unbound-config
+
             - name: pihole-password
               secret:
                 secretName: pihole-web-password
