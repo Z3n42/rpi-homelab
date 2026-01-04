@@ -108,13 +108,17 @@ resources:
                 - sh
                 - -c
                 - |
+                  echo "Forcing Longhorn to attach PVC..."
+                  ls /etc/pihole >/dev/null 2>&1
+                  echo "Waiting for /etc/pihole to be mounted..."
                   while ! grep -qs "/etc/pihole" /proc/mounts; do
-                    echo "waiting for pvc..."
                     sleep 1
                   done
+
+                  echo "PVC mounted."
               volumeMounts:
-                - mountPath: /etc/pihole
-                  name: pihole-storage
+                - name: pihole-storage
+                  mountPath: /etc/pihole
 
             - name: pihole-setup
               image: busybox:1.36
@@ -122,19 +126,22 @@ resources:
                 - sh
                 - -c
                 - |
+                  echo "Cleaning legacy Pi-hole files..."
+                  ls -l /etc/pihole
                   rm -f /etc/pihole/dnsmasq.conf
                   rm -f /etc/pihole/setupVars.conf
                   rm -f /etc/pihole/pihole-FTL.conf
                   rm -f /etc/dnsmasq.d/*
                   cp /tmp/source/pihole.toml /etc/pihole/pihole.toml
                   chown -R 1000:1000 /etc/pihole
+                  echo "Init complete."
               volumeMounts:
-                - mountPath: /etc/pihole
-                  name: pihole-storage
-                - mountPath: /etc/dnsmasq.d
-                  name: dnsmasq-storage
-                - mountPath: /tmp/source
-                  name: config-source
+                - name: pihole-storage
+                  mountPath: /etc/pihole
+                - name: dnsmasq-storage
+                  mountPath: /etc/dnsmasq.d
+                - name: config-source
+                  mountPath: /tmp/source
 
           containers:
             - name: pihole
