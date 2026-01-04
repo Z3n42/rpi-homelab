@@ -81,7 +81,7 @@ jobs:
             "pihole")
               echo "🧹 Cleaning Pi-hole Stack..."
               helmfile destroy --selector name=pihole-stack || true
-              force_delete_ns "pihole"
+              cleanup_services "pihole"
               ;;
 
             "traefik")

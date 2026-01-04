@@ -1,0 +1,144 @@
+name: 🚀 Safe Homelab Redeploy
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'What to redeploy?'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - 'pihole'
+          - 'homebridge'
+          - 'tailscale'
+          - 'networking-only'
+
+jobs:
+  redeploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: 🔍 Verify Environment
+        run: |
+          kubectl version --client
+          helmfile --version
+          sops --version
+
+      - name: 🧹 Pre-clean Services (PVCs preserved)
+        shell: bash
+        run: |
+          TARGET="${{ github.event.inputs.target || 'all' }}"
+          echo "🧹 SAFE PRE-CLEAN TARGET: $TARGET"
+
+          cleanup_services() {
+            NS=$1
+            echo "🧹 Cleaning Deployments, Jobs and Services in namespace: $NS"
+
+            kubectl delete deploy --all -n $NS --ignore-not-found=true || true
+            kubectl delete job --all -n $NS --ignore-not-found=true || true
+
+            for svc in $(kubectl get svc -n $NS -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+              echo "🧹 Cleaning Service $svc in $NS (removing finalizers)..."
+              kubectl get svc $svc -n $NS -o json \
+                | jq 'del(.metadata.finalizers)' \
+                | kubectl replace --raw "/api/v1/namespaces/$NS/services/$svc/finalize" -f - || true
+            done
+          }
+
+          case "$TARGET" in
+            "all")
+              cleanup_services "pihole"
+              cleanup_services "homebridge"
+              cleanup_services "tailscale"
+              ;;
+            "pihole")
+              cleanup_services "pihole"
+              ;;
+            "homebridge")
+              cleanup_services "homebridge"
+              ;;
+            "tailscale")
+              cleanup_services "tailscale"
+              ;;
+            "networking-only")
+              echo "🧹 Skipping app cleanup, networking only."
+              ;;
+          esac
+
+          echo "💾 PVCs are preserved (no delete of PVC/PV performed)."
+
+      - name: 🚀 Deploy with Helmfile
+        shell: bash
+        run: |
+          TARGET="${{ github.event.inputs.target || 'all' }}"
+          LOGFILE="/home/pi/logs/deploy.log"
+          mkdir -p "$(dirname "$LOGFILE")"
+
+          {
+            echo "🚀 SAFE REDEPLOY START: $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "Target: $TARGET"
+            echo "Commit: ${{ github.sha }}"
+            echo "Message: ${{ github.event.head_commit.message }}"
+            echo "--------------------------------------------------------"
+          } | tee -a $LOGFILE
+
+          set -o pipefail
+
+          echo "🎯 Syncing core networking (MetalLB, Longhorn)..." | tee -a $LOGFILE
+          helmfile sync --selector name=metallb 2>&1 | tee -a $LOGFILE
+          helmfile sync --selector name=longhorn 2>&1 | tee -a $LOGFILE
+
+          case "$TARGET" in
+            "all")
+              echo "🎯 Syncing full application stack..." | tee -a $LOGFILE
+              helmfile sync 2>&1 | tee -a $LOGFILE
+              ;;
+            "pihole")
+              echo "🎯 Syncing Pi-hole stack only..." | tee -a $LOGFILE
+              helmfile sync --selector name=pihole-stack 2>&1 | tee -a $LOGFILE
+              ;;
+            "homebridge")
+              echo "🎯 Syncing Homebridge stack only..." | tee -a $LOGFILE
+              helmfile sync --selector name=homebridge 2>&1 | tee -a $LOGFILE
+              ;;
+            "tailscale")
+              echo "🎯 Syncing Tailscale stack only..." | tee -a $LOGFILE
+              helmfile sync --selector name=tailscale 2>&1 | tee -a $LOGFILE
+              ;;
+            "networking-only")
+              echo "🎯 Networking-only sync done (MetalLB + Longhorn)." | tee -a $LOGFILE
+              ;;
+          esac
+
+          STATUS=$?
+
+          echo "--------------------------------------------------------" | tee -a $LOGFILE
+          if [ $STATUS -eq 0 ]; then
+            echo "✅ SUCCESS: Redeploy finished at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a $LOGFILE
+          else
+            echo "❌ FAILED (Exit Code: $STATUS)" | tee -a $LOGFILE
+            exit $STATUS
+          fi
+          echo "========================================================" | tee -a $LOGFILE
+
+      - name: 🔍 Final Health Check
+        if: success()
+        shell: bash
+        run: |
+          echo "🎯 LoadBalancer Services:"
+          kubectl get svc -A | grep LoadBalancer || echo "No LoadBalancer services."
+
+          echo ""
+          echo "🎯 Problematic Pods (non Running/Completed):"
+          kubectl get pods -A | grep -v "Running\|Completed" || echo "All pods running or completed."
+
+          echo ""
+          echo "🎯 Pi-hole Services (if present):"
+          kubectl get svc -n pihole || echo "No pihole namespace or services."

@@ -1,0 +1,134 @@
+name: 💣 Cluster Full Reset (Danger Zone)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'What to fully reset (including PVCs)?'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - 'pihole'
+          - 'homebridge'
+          - 'tailscale'
+          - 'storage-only'
+      confirm:
+        description: 'Type CONFIRM-FULL-RESET to proceed'
+        required: true
+        default: ''
+
+jobs:
+  full-reset:
+    runs-on: self-hosted
+
+    steps:
+      - name: 🚨 SAFETY CHECK
+        if: github.event.inputs.confirm != 'CONFIRM-FULL-RESET'
+        run: |
+          echo "❌ ABORTED: You must type CONFIRM-FULL-RESET"
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: 💣 Execute Full Reset
+        shell: bash
+        run: |
+          TARGET="${{ github.event.inputs.target }}"
+          echo "💣 FULL RESET TARGET: $TARGET"
+
+          force_delete_ns() {
+            NS=$1
+
+            if ! kubectl get ns $NS >/dev/null 2>&1; then
+              echo "✅ Namespace $NS already gone."
+              return
+            fi
+
+            echo "⏳ Deleting namespace $NS..."
+
+            # Try normal delete first
+            kubectl delete ns $NS --wait=false || true
+
+            echo "🧨 Deleting all namespaced resources in $NS..."
+            kubectl delete all --all -n $NS --force --grace-period=0 || true
+            kubectl delete pvc --all -n $NS --force --grace-period=0 || true
+            kubectl delete secrets --all -n $NS --force --grace-period=0 || true
+            kubectl delete configmaps --all -n $NS --force --grace-period=0 || true
+            kubectl delete jobs --all -n $NS --force --grace-period=0 || true
+            kubectl delete ingresses --all -n $NS --force --grace-period=0 || true
+
+            echo "🧨 Cleaning Service finalizers in $NS..."
+            for svc in $(kubectl get svc -n $NS -o jsonpath='{.items[*].metadata.name}'); do
+              kubectl get svc $svc -n $NS -o json \
+                | jq 'del(.metadata.finalizers)' \
+                | kubectl replace --raw "/api/v1/namespaces/$NS/services/$svc/finalize" -f - || true
+            done
+
+            echo "🔨 Removing namespace finalizers..."
+            kubectl get ns $NS -o json \
+              | jq 'del(.spec.finalizers)' \
+              | kubectl replace --raw "/api/v1/namespaces/$NS/finalize" -f - || true
+
+            echo "⏳ Waiting for namespace $NS to disappear..."
+            for i in $(seq 1 15); do
+              if kubectl get ns $NS >/dev/null 2>&1; then
+                sleep 2
+              else
+                echo "✅ Namespace $NS removed."
+                break
+              fi
+            done
+          }
+
+          destroy_releases() {
+            echo "🔥 Destroying Helmfile releases (best effort)..."
+            helmfile destroy || true
+          }
+
+          wipe_longhorn_pvcs() {
+            echo "💾 Wiping Longhorn PVCs and PVs..."
+            kubectl get pvc -A -o json | jq -r '.items[] | select(.spec.storageClassName=="longhorn") | [.metadata.namespace, .metadata.name] | @tsv' | \
+            while IFS=$'\t' read -r NS NAME; do
+              echo "🧹 Deleting PVC $NAME in $NS"
+              kubectl delete pvc "$NAME" -n "$NS" --force --grace-period=0 || true
+            done
+          }
+
+          case "$TARGET" in
+            "all")
+              echo "💥 FULL RESET: ALL STACKS + LONGHORN PVCs"
+              destroy_releases
+              for ns in pihole homebridge tailscale traefik-system metallb-system longhorn-system; do
+                force_delete_ns "$ns"
+              done
+              wipe_longhorn_pvcs
+              ;;
+            "pihole")
+              echo "💥 FULL RESET: Pi-hole only"
+              helmfile destroy --selector name=pihole-stack || true
+              force_delete_ns "pihole"
+              ;;
+            "homebridge")
+              echo "💥 FULL RESET: Homebridge only"
+              helmfile destroy --selector name=homebridge || true
+              force_delete_ns "homebridge"
+              ;;
+            "tailscale")
+              echo "💥 FULL RESET: Tailscale only"
+              helmfile destroy --selector name=tailscale || true
+              force_delete_ns "tailscale"
+              ;;
+            "storage-only")
+              echo "💥 FULL RESET: Longhorn storage only (PVCs/PVs)"
+              wipe_longhorn_pvcs
+              ;;
+          esac
+
+          echo "🗑️ Pruning failed/succeeded pods..."
+          kubectl delete pod --field-selector=status.phase==Failed -A --ignore-not-found=true || true
+          kubectl delete pod --field-selector=status.phase==Succeeded -A --ignore-not-found=true || true
+
+          echo "✅ FULL RESET COMPLETED"
