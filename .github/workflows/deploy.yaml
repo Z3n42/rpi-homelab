@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: 🧹 Log Rotation & Cleanup
         run: |
@@ -49,10 +51,26 @@ jobs:
           fi
 
       - name: 🔍 Detect Changed Services
+        shell: bash
         run: |
           echo "🔍 Detecting changed services..."
-          git fetch --depth=2 origin main
-          CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.sha }}"
+
+          # Si BEFORE es todo ceros, significa que el evento es un push de tag
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "⚠️ Tag push detected. Using previous commit instead of github.event.before."
+            BEFORE=$(git rev-parse HEAD~1)
+          fi
+
+          echo "Comparing:"
+          echo "  BEFORE = $BEFORE"
+          echo "  AFTER  = $AFTER"
+
+          CHANGED=$(git diff --name-only $BEFORE $AFTER || true)
+
+          echo "Changed files:"
           echo "$CHANGED"
 
           SERVICES=()
@@ -79,8 +97,14 @@ jobs:
             esac
           done
 
-          UNIQUE_SERVICES=$(echo "${SERVICES[@]}" | tr ' ' '\n' | sort -u)
-          echo "$UNIQUE_SERVICES" > /tmp/changed_services.list
+          if [[ " ${SERVICES[@]} " =~ " pihole-stack " ]] || \
+             [[ " ${SERVICES[@]} " =~ " homebridge " ]]; then
+            SERVICES+=("traefik")
+          fi
+
+          UNIQUE=$(echo "${SERVICES[@]}" | tr ' ' '\n' | sort -u)
+          echo "$UNIQUE" > /tmp/changed_services.list
+
           echo "🎯 Services to sync:"
           cat /tmp/changed_services.list
 
