@@ -240,7 +240,7 @@ resources:
         spec:
           containers:
             - name: pihole
-              image: pihole/pihole:2024.11.0
+              image: pihole/pihole:2025.11.1
               imagePullPolicy: IfNotPresent
               env:
                 - name: TZ
@@ -292,7 +292,7 @@ resources:
                 failureThreshold: 3
 
             - name: unbound
-              image: crazymax/unbound:1.21.0
+              image: crazymax/unbound:1.24.0
               imagePullPolicy: IfNotPresent
               ports:
                 - containerPort: 5335
@@ -328,7 +328,7 @@ resources:
                 failureThreshold: 3
 
             - name: pihole-password-setter
-              image: pihole/pihole:2024.11.0
+              image: pihole/pihole:2025.11.1
               imagePullPolicy: IfNotPresent
               command:
                 - sh
