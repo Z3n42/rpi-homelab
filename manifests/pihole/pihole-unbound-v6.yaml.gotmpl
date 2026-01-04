@@ -96,7 +96,8 @@ resources:
                 - -c
                 - |
                   mkdir -p /etc/pihole
-                  cp -f /tmp/source/pihole.toml /etc/pihole/pihole.toml
+                  rm -f /etc/pihole/pihole.toml
+                  cp /tmp/source/pihole.toml /etc/pihole/pihole.toml
                   chown -R 1000:1000 /etc/pihole
               volumeMounts:
                 - name: storage
