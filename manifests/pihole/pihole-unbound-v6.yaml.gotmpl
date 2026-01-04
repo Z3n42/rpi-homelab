@@ -272,6 +272,10 @@ resources:
                       - sh
                       - -c
                       - |
+                        echo "[postStart] Ensuring FTL runtime directory exists..."
+                        mkdir -p /run/pihole-ftl
+                        chown pihole:pihole /run/pihole-ftl
+
                         echo "[postStart] Waiting for FTL process..."
                         for i in $(seq 1 300); do
                           if pgrep -x "pihole-FTL" >/dev/null; then
@@ -292,7 +296,7 @@ resources:
 
                         PASSWORD=$(cat /etc/pihole-password/password)
                         echo "[postStart] Setting admin password..."
-                        pihole setpasswd "$PASSWORD" || echo "[postStart] WARNING: setpasswd failed"
+                        pihole setpassword "$PASSWORD" || echo "[postStart] WARNING: setpasswd failed"
 
                         echo "[postStart] Done"
 
