@@ -29,48 +29,28 @@ jobs:
           helmfile --version
           sops --version
 
-      - name: 🧹 Pre-clean Services (PVCs preserved)
+      - name: 🔄 Safe Restart Function
+        id: restart-fn
         shell: bash
         run: |
-          TARGET="${{ github.event.inputs.target || 'all' }}"
-          echo "🧹 SAFE PRE-CLEAN TARGET: $TARGET"
+          cat << 'EOF' > /tmp/safe_restart.sh
+          #!/bin/bash
+          set -e
 
-          cleanup_services() {
+          safe_restart() {
             NS=$1
-            echo "🧹 Cleaning Deployments, Jobs and Services in namespace: $NS"
+            DEPLOY=$2
 
-            kubectl delete deploy --all -n $NS --ignore-not-found=true || true
-            kubectl delete job --all -n $NS --ignore-not-found=true || true
-
-            for svc in $(kubectl get svc -n $NS -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
-              echo "🧹 Cleaning Service $svc in $NS (removing finalizers)..."
-              kubectl get svc $svc -n $NS -o json \
-                | jq 'del(.metadata.finalizers)' \
-                | kubectl replace --raw "/api/v1/namespaces/$NS/services/$svc/finalize" -f - || true
-            done
+            echo "🔄 Restarting Deployment $DEPLOY in namespace $NS"
+            kubectl rollout restart deploy/$DEPLOY -n $NS
+            kubectl rollout status deploy/$DEPLOY -n $NS --timeout=180s
           }
+          EOF
+          chmod +x /tmp/safe_restart.sh
 
-          case "$TARGET" in
-            "all")
-              cleanup_services "pihole"
-              cleanup_services "homebridge"
-              cleanup_services "tailscale"
-              ;;
-            "pihole")
-              cleanup_services "pihole"
-              ;;
-            "homebridge")
-              cleanup_services "homebridge"
-              ;;
-            "tailscale")
-              cleanup_services "tailscale"
-              ;;
-            "networking-only")
-              echo "🧹 Skipping app cleanup, networking only."
-              ;;
-          esac
-
-          echo "💾 PVCs are preserved (no delete of PVC/PV performed)."
+      - name: 🧹 Pre-clean (SAFE no deletes)
+        shell: bash
+        run: echo "🧹 No destructive cleanup performed. PVCs, Services, Deployments preserved."
 
       - name: 🚀 Deploy with Helmfile
         shell: bash
@@ -126,17 +106,26 @@ jobs:
           fi
           echo "========================================================" | tee -a $LOGFILE
 
-      - name: 🔍 Final Health Check
+      - name: 🔄 Restart Deployments (SAFE)
         if: success()
         shell: bash
         run: |
-          echo "🎯 LoadBalancer Services:"
-          kubectl get svc -A | grep LoadBalancer || echo "No LoadBalancer services."
+          TARGET="${{ github.event.inputs.target || 'all' }}"
+          source /tmp/safe_restart.sh
 
-          echo ""
-          echo "🎯 Problematic Pods (non Running/Completed):"
-          kubectl get pods -A | grep -v "Running\|Completed" || echo "All pods running or completed."
-
-          echo ""
-          echo "🎯 Pi-hole Services (if present):"
-          kubectl get svc -n pihole || echo "No pihole namespace or services."
+          case "$TARGET" in
+            "all")
+              safe_restart "pihole" "pihole-v6"
+              safe_restart "homebridge" "homebridge"
+              safe_restart "tailscale" "tailscale-operator"
+              ;;
+            "pihole")
+              safe_restart "pihole" "pihole-v6"
+              ;;
+            "homebridge")
+              safe_restart "homebridge" "homebridge"
+              ;;
+            "tailscale")
+              safe_restart "tailscale" "tailscale-operator"
+              ;;
+            "networking-only")

@@ -63,17 +63,8 @@ releases:
     chart: traefik/traefik
     version: "28.1.0"
     needs: [traefik-system/traefik-crds, metallb-system/metallb-config]
-    hooks:
-      - events: [presync]
-        showlogs: true
-        command: "sh"
-        args:
-          - "-c"
-          - |
-            echo "=== Verifying Traefik CRDs before App Sync ==="
-            kubectl wait --for=condition=Established crd/ingressroutes.traefik.io --timeout=60s
     values:
-      - installationCRDs: false# Solo instalamos los CRDs aquí
+      - installationCRDs: false
       - providers:
           kubernetesCRD:
             enabled: true
@@ -102,7 +93,48 @@ releases:
           enabled: true
           storageClass: longhorn
           size: 1Gi
-      - installationCRDs: true
+
+  - name: traefik-cleanup-crds
+    namespace: traefik-system
+    chart: bedag/raw
+    needs: []
+    values:
+      - resources:
+          - apiVersion: apiextensions.k8s.io/v1
+            kind: CustomResourceDefinition
+            metadata:
+              name: accesscontrolpolicies.hub.traefik.io
+            $patch: delete
+          - apiVersion: apiextensions.k8s.io/v1
+            kind: CustomResourceDefinition
+            metadata:
+              name: apiaccesses.hub.traefik.io
+            $patch: delete
+          - apiVersion: apiextensions.k8s.io/v1
+            kind: CustomResourceDefinition
+            metadata:
+              name: apiportals.hub.traefik.io
+            $patch: delete
+          - apiVersion: apiextensions.k8s.io/v1
+            kind: CustomResourceDefinition
+            metadata:
+              name: apiratelimits.hub.traefik.io
+            $patch: delete
+          - apiVersion: apiextensions.k8s.io/v1
+            kind: CustomResourceDefinition
+            metadata:
+              name: apis.hub.traefik.io
+            $patch: delete
+          - apiVersion: apiextensions.k8s.io/v1
+            kind: CustomResourceDefinition
+            metadata:
+              name: apiversions.hub.traefik.io
+            $patch: delete
+          - apiVersion: apiextensions.k8s.io/v1
+            kind: CustomResourceDefinition
+            metadata:
+              name: edgeingresses.hub.traefik.io
+            $patch: delete
 
   - name: pihole-stack
     namespace: pihole

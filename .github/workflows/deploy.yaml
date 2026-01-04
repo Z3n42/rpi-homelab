@@ -2,7 +2,8 @@ name: Deploy Homelab
 
 on:
   push:
-    branches: [ "main" ]
+    tags:
+      - "deploy-*"
   workflow_dispatch:
 
 jobs:
@@ -47,29 +48,70 @@ jobs:
              fi
           fi
 
+      - name: 🔍 Detect Changed Services
+        run: |
+          echo "🔍 Detecting changed services..."
+          git fetch --depth=2 origin main
+          CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+          echo "$CHANGED"
+
+          SERVICES=()
+          for file in $CHANGED; do
+            case "$file" in
+              manifests/pihole/*|values/pihole*|secrets/pihole*)
+                SERVICES+=("pihole-stack")
+                ;;
+              manifests/homebridge/*|values/homebridge*)
+                SERVICES+=("homebridge")
+                ;;
+              manifests/tailscale/*|values/tailscale*)
+                SERVICES+=("tailscale")
+                ;;
+              manifests/metallb/*|values/metallb*)
+                SERVICES+=("metallb")
+                ;;
+              manifests/longhorn/*|values/longhorn*)
+                SERVICES+=("longhorn")
+                ;;
+              manifests/traefik/*|values/traefik*)
+                SERVICES+=("traefik")
+                ;;
+            esac
+          done
+
+          UNIQUE_SERVICES=$(echo "${SERVICES[@]}" | tr ' ' '\n' | sort -u)
+          echo "$UNIQUE_SERVICES" > /tmp/changed_services.list
+          echo "🎯 Services to sync:"
+          cat /tmp/changed_services.list
+
       - name: 🚀 Deploy with Helmfile
         run: |
           LOGFILE="/home/pi/logs/deploy.log"
-          
+          mkdir -p "$(dirname "$LOGFILE")"
+
           {
             echo "🚀 START DEPLOY: $(date '+%Y-%m-%d %H:%M:%S')"
             echo "Commit: ${{ github.sha }}"
             echo "Message: ${{ github.event.head_commit.message }}"
             echo "--------------------------------------------------------"
           } | tee -a $LOGFILE
-          
+
           set -o pipefail
-          
-          echo "🎯 Bootstrap MetalLB (CRDs)..." | tee -a $LOGFILE
+
+          echo "🎯 Syncing core networking..." | tee -a $LOGFILE
           helmfile sync --selector name=metallb 2>&1 | tee -a $LOGFILE
           helmfile sync --selector name=longhorn 2>&1 | tee -a $LOGFILE
-          
-          # 2. Sincronizar todo lo demás
-          echo "🎯 Syncing Application Stack..." | tee -a $LOGFILE
-          helmfile sync 2>&1 | tee -a $LOGFILE
-          
+
+          if [ -s /tmp/changed_services.list ]; then
+            for svc in $(cat /tmp/changed_services.list); do
+              echo "🎯 Syncing $svc..." | tee -a $LOGFILE
+              helmfile sync --selector name=$svc 2>&1 | tee -a $LOGFILE
+            done
+          else
+            echo "⚠️ No changed services detected. Skipping app sync." | tee -a $LOGFILE
+          fi
+
           STATUS=$?
-          
           echo "--------------------------------------------------------" | tee -a $LOGFILE
           if [ $STATUS -eq 0 ]; then
             echo "✅ SUCCESS: Deployment finished at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a $LOGFILE
@@ -80,7 +122,6 @@ jobs:
             exit $STATUS
           fi
           echo "========================================================" | tee -a $LOGFILE
-
 
       - name: 🔍 Final Health Check
         if: success()
