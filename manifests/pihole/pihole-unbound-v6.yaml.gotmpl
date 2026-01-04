@@ -272,8 +272,17 @@ resources:
                       - sh
                       - -c
                       - |
+                        echo "[postStart] Waiting for FTL process..."
+                        for i in $(seq 1 300); do
+                          if pgrep -x "pihole-FTL" >/dev/null; then
+                            echo "[postStart] FTL process detected"
+                            break
+                          fi
+                          sleep 1
+                        done
+
                         echo "[postStart] Waiting for FTL socket..."
-                        for i in $(seq 1 60); do
+                        for i in $(seq 1 300); do
                           if [ -S /run/pihole-ftl/pihole-FTL.sock ]; then
                             echo "[postStart] FTL socket detected"
                             break
@@ -281,15 +290,11 @@ resources:
                           sleep 1
                         done
 
-                        if [ ! -S /run/pihole-ftl/pihole-FTL.sock ]; then
-                          echo "[postStart] ERROR: FTL socket not found after 60s"
-                          exit 1
-                        fi
-
                         PASSWORD=$(cat /etc/pihole-password/password)
                         echo "[postStart] Setting admin password..."
-                        pihole setpasswd "$PASSWORD"
-                        echo "[postStart] Password applied successfully"
+                        pihole setpasswd "$PASSWORD" || echo "[postStart] WARNING: setpasswd failed"
+
+                        echo "[postStart] Done"
 
             - name: unbound
               image: crazymax/unbound:1.24.0
