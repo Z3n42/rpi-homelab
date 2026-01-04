@@ -51,7 +51,7 @@ jobs:
               # PATCH FINALIZERS (La magia)
               echo "🔨 Patching finalizers for $NS..."
               kubectl get ns $NS -o json | \
-                jq '.spec.finalizers=[]' | \
+                jq '.spec.pihole-web=[]' | \
                 kubectl replace --raw "/api/v1/namespaces/$NS/finalize" -f - || true
             else
               echo "✅ Namespace $NS already gone."

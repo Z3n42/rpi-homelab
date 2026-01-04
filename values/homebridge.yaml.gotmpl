@@ -2,7 +2,9 @@ image:
   tag: latest
 service:
   type: LoadBalancer
-  loadBalancerIP: {{ requiredEnv "HOMEBRIDGE_IP" }}
+  annotations:
+    metallb.universe.tf/address-pool: pihole-pool
+    metallb.universe.tf/loadBalancerIPs: "{{ .Values.network.services.homebridge.ip }}"
 persistence:
   enabled: true
   storageClass: longhorn
