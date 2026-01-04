@@ -87,16 +87,29 @@ resources:
             app: pihole
         spec:
           initContainers:
-            - name: pihole-setup
-              image: busybox
+            - name: pihole-password-setup  # ← NUEVO: Establece password PRIMERO
+              image: pihole/pihole:latest
               command: 
                 - "sh"
                 - "-c"
                 - |
+                  while [ ! -d /etc/pihole ]; do sleep 1; done
+                  echo "Estableciendo password Pi-hole..."
+                  pihole -a -p "$PASSWORD"
                   mkdir -p /etc/pihole
-                  rm -f /etc/pihole/pihole.toml
-                  cp /tmp/source/pihole.toml /etc/pihole/pihole.toml
+                  if [ ! -f /etc/pihole/pihole.toml ]; then
+                    echo "Copiando config inicial..."
+                    cp /tmp/source/pihole.toml /etc/pihole/pihole.toml
+                  else
+                    echo "Config TOML ya existe, saltando copia."
+                  fi
                   chown -R 1000:1000 /etc/pihole
+              env:
+                - name: PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: pihole-web-password
+                      key: password
               volumeMounts:
                 - name: storage
                   mountPath: /etc/pihole
