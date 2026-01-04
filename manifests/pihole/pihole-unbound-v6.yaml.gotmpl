@@ -24,8 +24,8 @@ resources:
           do-tcp: yes
           do-ip6: no
           prefer-ip6: no
-          access-control: 0.0.0.0/0 allow
           access-control: 127.0.0.0/8 allow
+          access-control: 10.0.0.0/8 allow
           harden-glue: yes
           harden-dnssec-stripped: yes
           use-caps-for-id: no
@@ -34,6 +34,9 @@ resources:
           num-threads: 1
           so-rcvbuf: 1m
           so-sndbuf: 1m
+          private-address: 10.0.0.0/8
+          private-address: 172.16.0.0/12
+          private-address: 192.168.0.0/16
 
   - apiVersion: v1
     kind: ConfigMap
@@ -45,8 +48,11 @@ resources:
         [dns]
         upstreams = ["127.0.0.1#5335"]
         dnssec = true
+        listeningMode = "all"
+        
         [webserver]
         port = 80
+        
         [adlists]
         sources = [
           "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
@@ -80,6 +86,137 @@ resources:
         requests:
           storage: 100Mi
 
+  # Critical initialization Job - must run BEFORE Deployment
+  - apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: pihole-v6-init
+      namespace: pihole
+    spec:
+      ttlSecondsAfterFinished: 300
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: pihole-init
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: cleanup-and-setup
+              image: busybox:1.36
+              command:
+                - sh
+                - -c
+                - |
+                  set -e
+                  
+                  echo "=================================================="
+                  echo "Pi-hole v6 TOML Mode - PVC Initialization"
+                  echo "=================================================="
+                  echo ""
+                  
+                  echo "STEP 1: Verify initial PVC state"
+                  echo "-------------------------------------------"
+                  if [ -d /etc/pihole ]; then
+                    echo "/etc/pihole contents:"
+                    ls -lah /etc/pihole/ 2>/dev/null || echo "  (empty or inaccessible)"
+                  else
+                    echo "WARNING: /etc/pihole does not exist, creating..."
+                    mkdir -p /etc/pihole
+                  fi
+                  echo ""
+                  
+                  echo "STEP 2: Verify mounted ConfigMap"
+                  echo "---------------------------------------"
+                  if [ -f /tmp/source/pihole.toml ]; then
+                    echo "ConfigMap mounted correctly at /tmp/source/"
+                    echo "pihole.toml contents:"
+                    cat /tmp/source/pihole.toml
+                  else
+                    echo "ERROR: /tmp/source/pihole.toml DOES NOT EXIST"
+                    echo "ConfigMap was not mounted properly"
+                    exit 1
+                  fi
+                  echo ""
+                  
+                  echo "STEP 3: Remove legacy files"
+                  echo "-------------------------------------"
+                  LEGACY_FILES="dnsmasq.conf setupVars.conf pihole-FTL.conf"
+                  for file in $LEGACY_FILES; do
+                    if [ -f "/etc/pihole/$file" ]; then
+                      echo "  Removing: $file"
+                      rm -f "/etc/pihole/$file"
+                    else
+                      echo "  Not found: $file"
+                    fi
+                  done
+                  
+                  # Remove old backups
+                  if ls /etc/pihole/*.conf.bak 1> /dev/null 2>&1; then
+                    echo "  Removing: *.conf.bak files"
+                    rm -f /etc/pihole/*.conf.bak
+                  fi
+                  echo ""
+                  
+                  echo "STEP 4: Clean /etc/dnsmasq.d"
+                  echo "----------------------------------"
+                  if [ -d /etc/dnsmasq.d ]; then
+                    rm -rf /etc/dnsmasq.d/*
+                    echo "  /etc/dnsmasq.d cleaned"
+                  else
+                    mkdir -p /etc/dnsmasq.d
+                    echo "  /etc/dnsmasq.d created"
+                  fi
+                  echo ""
+                  
+                  echo "STEP 5: Copy pihole.toml"
+                  echo "------------------------------"
+                  cp /tmp/source/pihole.toml /etc/pihole/pihole.toml
+                  chmod 644 /etc/pihole/pihole.toml
+                  echo "  pihole.toml copied and permissions set"
+                  echo ""
+                  
+                  echo "STEP 6: Final verification"
+                  echo "------------------------------"
+                  echo "Final /etc/pihole contents:"
+                  ls -lah /etc/pihole/
+                  echo ""
+                  
+                  echo "Installed pihole.toml contents:"
+                  cat /etc/pihole/pihole.toml
+                  echo ""
+                  
+                  echo "=================================================="
+                  echo "INITIALIZATION COMPLETED"
+                  echo "=================================================="
+                  echo "PVC is ready for Pi-hole v6 in TOML mode"
+                  echo "No legacy files present to force dnsmasq mode"
+                  echo "=================================================="
+              volumeMounts:
+                - name: pihole-storage
+                  mountPath: /etc/pihole
+                - name: dnsmasq-storage
+                  mountPath: /etc/dnsmasq.d
+                - name: config-source
+                  mountPath: /tmp/source
+              resources:
+                requests:
+                  cpu: "10m"
+                  memory: "32Mi"
+                limits:
+                  cpu: "100m"
+                  memory: "64Mi"
+          volumes:
+            - name: pihole-storage
+              persistentVolumeClaim:
+                claimName: pihole-pvc-v6
+            - name: dnsmasq-storage
+              persistentVolumeClaim:
+                claimName: pihole-dnsmasq-pvc
+            - name: config-source
+              configMap:
+                name: pihole-v6-config
+
   - apiVersion: apps/v1
     kind: Deployment
     metadata:
@@ -101,57 +238,17 @@ resources:
           annotations:
             secret-hash: "{{ .Values.pihole.adminPassword | sha256sum }}"
         spec:
-          initContainers:
-            - name: wait-for-pvc
-              image: busybox
-              command:
-                - sh
-                - -c
-                - |
-                  echo "Forcing Longhorn to attach PVC..."
-                  ls /etc/pihole >/dev/null 2>&1
-                  echo "Waiting for /etc/pihole to be mounted..."
-                  while ! grep -qs "/etc/pihole" /proc/mounts; do
-                    sleep 1
-                  done
-
-                  echo "PVC mounted."
-              volumeMounts:
-                - name: pihole-storage
-                  mountPath: /etc/pihole
-
-            - name: pihole-setup
-              image: busybox:1.36
-              command:
-                - sh
-                - -c
-                - |
-                  echo "Cleaning legacy Pi-hole files..."
-                  ls -l /etc/pihole
-                  rm -f /etc/pihole/dnsmasq.conf
-                  rm -f /etc/pihole/setupVars.conf
-                  rm -f /etc/pihole/pihole-FTL.conf
-                  rm -f /etc/dnsmasq.d/*
-                  cp /tmp/source/pihole.toml /etc/pihole/pihole.toml
-                  chown -R 1000:1000 /etc/pihole
-                  echo "Init complete."
-              volumeMounts:
-                - name: pihole-storage
-                  mountPath: /etc/pihole
-                - name: dnsmasq-storage
-                  mountPath: /etc/dnsmasq.d
-                - name: config-source
-                  mountPath: /tmp/source
-
           containers:
             - name: pihole
-              image: pihole/pihole:latest
-              imagePullPolicy: Always
+              image: pihole/pihole:2024.11.0
+              imagePullPolicy: IfNotPresent
               env:
                 - name: TZ
                   value: "Europe/Madrid"
-                - name: PIHOLE_TOML_ENABLED
-                  value: "true"
+                - name: FTLCONF_LOCAL_IPV4
+                  value: "{{ .Values.network.services.pihole.primary_ip }}"
+                - name: DNSMASQ_LISTENING
+                  value: "all"
               ports:
                 - containerPort: 53
                   name: domain-udp
@@ -169,7 +266,7 @@ resources:
                   mountPath: /etc/dnsmasq.d
               securityContext:
                 capabilities:
-                  add: ["NET_ADMIN", "NET_RAW"]
+                  add: ["NET_ADMIN"]
               resources:
                 requests:
                   cpu: "100m"
@@ -177,30 +274,92 @@ resources:
                 limits:
                   cpu: "500m"
                   memory: "512Mi"
+              livenessProbe:
+                httpGet:
+                  path: /admin/
+                  port: 80
+                initialDelaySeconds: 60
+                periodSeconds: 30
+                timeoutSeconds: 5
+                failureThreshold: 3
+              readinessProbe:
+                httpGet:
+                  path: /admin/
+                  port: 80
+                initialDelaySeconds: 30
+                periodSeconds: 10
+                timeoutSeconds: 3
+                failureThreshold: 3
 
             - name: unbound
-              image: crazymax/unbound:latest
+              image: crazymax/unbound:1.21.0
+              imagePullPolicy: IfNotPresent
               ports:
                 - containerPort: 5335
                   name: unbound-udp
                   protocol: UDP
+                - containerPort: 5335
+                  name: unbound-tcp
+                  protocol: TCP
               volumeMounts:
                 - name: unbound-conf
                   mountPath: /etc/unbound/unbound.conf
                   subPath: unbound.conf
-              securityContext:
-                capabilities:
-                  add: ["NET_BIND_SERVICE"]
-                allowPrivilegeEscalation: false
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "200m"
+                  memory: "256Mi"
+              livenessProbe:
+                tcpSocket:
+                  port: 5335
+                initialDelaySeconds: 30
+                periodSeconds: 30
+                timeoutSeconds: 3
+                failureThreshold: 3
+              readinessProbe:
+                tcpSocket:
+                  port: 5335
+                initialDelaySeconds: 10
+                periodSeconds: 10
+                timeoutSeconds: 2
+                failureThreshold: 3
 
             - name: pihole-password-setter
-              image: pihole/pihole:latest
+              image: pihole/pihole:2024.11.0
+              imagePullPolicy: IfNotPresent
               command:
                 - sh
                 - -c
                 - |
-                  until nc -z localhost 80; do sleep 1; done
-                  pihole setpassword "$(cat /etc/pihole-password/password)"
+                  echo "Waiting for Pi-hole to be ready..."
+                  
+                  # Wait for HTTP port
+                  until nc -z localhost 80 2>/dev/null; do 
+                    echo "Waiting for port 80..."
+                    sleep 2
+                  done
+                  echo "Port 80 is available"
+                  
+                  # Wait for FTL to be fully operational
+                  echo "Waiting for FTL to be fully started..."
+                  sleep 15
+                  
+                  # Configure password
+                  echo "Setting admin password..."
+                  PASSWORD=$(cat /etc/pihole-password/password)
+                  
+                  if pihole -a -p "$PASSWORD"; then
+                    echo "Password configured successfully"
+                  else
+                    echo "Failed to set password, retrying in 5s..."
+                    sleep 5
+                    pihole -a -p "$PASSWORD"
+                  fi
+                  
+                  echo "Configuration complete. Keeping container alive..."
                   sleep infinity
               volumeMounts:
                 - name: pihole-storage
@@ -208,24 +367,24 @@ resources:
                 - name: pihole-password
                   mountPath: /etc/pihole-password
                   readOnly: true
+              resources:
+                requests:
+                  cpu: "10m"
+                  memory: "32Mi"
+                limits:
+                  cpu: "50m"
+                  memory: "64Mi"
 
           volumes:
             - name: pihole-storage
               persistentVolumeClaim:
                 claimName: pihole-pvc-v6
-
             - name: dnsmasq-storage
               persistentVolumeClaim:
                 claimName: pihole-dnsmasq-pvc
-
-            - name: config-source
-              configMap:
-                name: pihole-v6-config
-
             - name: unbound-conf
               configMap:
                 name: unbound-config
-
             - name: pihole-password
               secret:
                 secretName: pihole-web-password
@@ -243,6 +402,7 @@ resources:
       selector:
         app: pihole
       type: LoadBalancer
+      externalTrafficPolicy: Local
       ports:
         - name: domain-udp
           port: 53
@@ -282,6 +442,8 @@ resources:
         contentTypeNosniff: true
         forceSTSHeader: true
         stsSeconds: 31536000
+        frameDeny: true
+        contentSecurityPolicy: "frame-ancestors 'self'"
 
   - apiVersion: traefik.io/v1alpha1
     kind: Middleware
@@ -301,6 +463,7 @@ resources:
       annotations:
         traefik.ingress.kubernetes.io/router.entrypoints: web, websecure
         traefik.ingress.kubernetes.io/router.middlewares: pihole-pihole-headers@kubernetescrd, pihole-pihole-redirect-http@kubernetescrd
+        cert-manager.io/cluster-issuer: letsencrypt-prod
     spec:
       ingressClassName: traefik
       rules:
@@ -317,3 +480,4 @@ resources:
       tls:
         - hosts:
             - "pihole.{{ .Values.network.domain }}"
+          secretName: pihole-tls-cert
