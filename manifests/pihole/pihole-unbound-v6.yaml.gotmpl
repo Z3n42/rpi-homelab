@@ -87,6 +87,12 @@ resources:
             app: pihole
         spec:
           initContainers:
+            - name: permissions-fix
+              image: busybox
+              command: ["sh", "-c", "chown -R 1000:1000 /etc/pihole"]
+              volumeMounts:
+                - name: storage
+                  mountPath: /etc/pihole
             - name: config-fix
               image: busybox
               command: ["sh", "-c", "mkdir -p /etc/pihole && cp /tmp/source/pihole.toml /etc/pihole/pihole.toml && chown -R 1000:1000 /etc/pihole"]
