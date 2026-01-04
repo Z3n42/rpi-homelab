@@ -47,7 +47,6 @@ resources:
         dnssec = true
         [webserver]
         port = 80
-        pwhash = "{{ .Values.pihole.adminPasswordHash }}"
         [adlists]
         sources = [
           "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
@@ -119,9 +118,23 @@ resources:
                 - containerPort: 80
                   name: http
                   protocol: TCP
+            
+              lifecycle:
+                postStart:
+                  exec:
+                    command:
+                      - sh
+                      - -c
+                      - |
+                        until nc -z localhost 80; do sleep 1; done
+                        pihole setpassword "$(cat /etc/pihole-password/password)"
+
               volumeMounts:
                 - name: storage
                   mountPath: /etc/pihole
+                - name: pihole-password
+                  mountPath: /etc/pihole-password
+                  readOnly: true
               securityContext:
                 capabilities:
                   add: ["NET_ADMIN", "NET_RAW"]
@@ -158,6 +171,10 @@ resources:
             - name: unbound-conf
               configMap:
                 name: unbound-config
+            - name: pihole-password
+              secret:
+                secretName: pihole-web-password
+
 
   - apiVersion: v1
     kind: Service
