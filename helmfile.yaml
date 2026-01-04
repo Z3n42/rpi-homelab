@@ -113,8 +113,7 @@ releases:
       - longhorn-system/longhorn
       - traefik-system/traefik
     values:
-      - resources:
-          {{ readFile "manifests/pihole/pihole-unbound-v6.yaml.gotmpl" | fromYaml }}
+      - manifests/pihole/pihole-unbound-v6.yaml.gotmpl
 
   - name: homebridge
     namespace: homebridge
