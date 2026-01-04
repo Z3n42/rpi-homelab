@@ -112,7 +112,7 @@ releases:
       - metallb-system/metallb
       - longhorn-system/longhorn
       - traefik-system/traefik
-    valuesFiles:
+    values:
       - manifests/pihole/pihole-unbound-v6.yaml.gotmpl
 
   - name: homebridge
