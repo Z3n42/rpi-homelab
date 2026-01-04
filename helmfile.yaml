@@ -55,6 +55,8 @@ releases:
       - installationCRDs: true
       - core:
           enabled: false
+      - service:
+          enabled: false
 
   - name: traefik
     namespace: traefik-system
