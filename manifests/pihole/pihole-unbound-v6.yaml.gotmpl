@@ -327,6 +327,23 @@ resources:
                 timeoutSeconds: 2
                 failureThreshold: 3
 
+          volumes:
+            - name: pihole-storage
+              persistentVolumeClaim:
+                claimName: pihole-pvc-v6
+
+            - name: dnsmasq-storage
+              persistentVolumeClaim:
+                claimName: pihole-dnsmasq-pvc
+
+            - name: pihole-password
+              secret:
+                secretName: pihole-web-password
+
+            - name: unbound-conf
+              configMap:
+                name: unbound-config
+
   - apiVersion: v1
     kind: Service
     metadata:
