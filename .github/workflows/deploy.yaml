@@ -19,6 +19,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: 🧪 Debug Helmfile path
+        run: |
+          echo "=== Helmfile being used ==="
+          pwd
+          ls -R .
+          echo "=== Content of helmfile.yaml ==="
+          cat helmfile.yaml
+
       - name: 🧹 Log Rotation & Cleanup
         run: |
           LOG_DIR="/home/pi/logs"
