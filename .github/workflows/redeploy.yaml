@@ -29,106 +29,98 @@ jobs:
           helmfile --version
           sops --version
 
-      - name: 🔄 Safe Restart Function
-        id: restart-fn
+      - name: 🚀 Deploy with Helmfile (with rollback safeguard)
         shell: bash
         run: |
-          cat << 'EOF' > /tmp/safe_restart.sh
-          #!/bin/bash
-          set -e
+          set -euo pipefail
 
-          safe_restart() {
-            NS=$1
-            DEPLOY=$2
+          rollback_if_needed() {
+            local RELEASE=$1
+            local NS=$2
 
-            echo "🔄 Restarting Deployment $DEPLOY in namespace $NS"
-            kubectl rollout restart deploy/$DEPLOY -n $NS
-            kubectl rollout status deploy/$DEPLOY -n $NS --timeout=180s
+            PREV=$(helm history "$RELEASE" -n "$NS" | awk 'NR==2{print $1}')
+            NEW=$(helm history "$RELEASE" -n "$NS" | awk 'NR==2{print $1}')
+
+            if [ "$NEW" -gt "$PREV" ]; then
+              echo "⚠️ Rolling back $RELEASE to revision $PREV"
+              helm rollback "$RELEASE" "$PREV" -n "$NS"
+            else
+              echo "ℹ️ No rollback needed for $RELEASE"
+            fi
           }
-          EOF
-          chmod +x /tmp/safe_restart.sh
 
-      - name: 🧹 Pre-clean (SAFE no deletes)
-        shell: bash
-        run: echo "🧹 No destructive cleanup performed. PVCs, Services, Deployments preserved."
+          TARGET="${{ github.event.inputs.target }}"
 
-      - name: 🚀 Deploy with Helmfile
-        shell: bash
-        run: |
-          TARGET="${{ github.event.inputs.target || 'all' }}"
-          LOGFILE="/home/pi/logs/deploy.log"
-          mkdir -p "$(dirname "$LOGFILE")"
-
-          {
-            echo "🚀 SAFE REDEPLOY START: $(date '+%Y-%m-%d %H:%M:%S')"
-            echo "Target: $TARGET"
-            echo "Commit: ${{ github.sha }}"
-            echo "Message: ${{ github.event.head_commit.message }}"
-            echo "--------------------------------------------------------"
-          } | tee -a $LOGFILE
-
-          set -o pipefail
-
-          echo "🎯 Syncing core networking (MetalLB, Longhorn)..." | tee -a $LOGFILE
-          helmfile sync --selector name=metallb 2>&1 | tee -a $LOGFILE
-          helmfile sync --selector name=longhorn 2>&1 | tee -a $LOGFILE
+          echo "🎯 Syncing core networking..."
+          helmfile sync --selector name=metallb
+          helmfile sync --selector name=longhorn
 
           case "$TARGET" in
-            "all")
-              echo "🎯 Syncing full application stack..." | tee -a $LOGFILE
-              helmfile sync 2>&1 | tee -a $LOGFILE
-              ;;
-            "pihole")
-              echo "🎯 Syncing Pi-hole stack only..." | tee -a $LOGFILE
-              helmfile sync --selector name=pihole-stack 2>&1 | tee -a $LOGFILE
-              ;;
-            "homebridge")
-              echo "🎯 Syncing Homebridge stack only..." | tee -a $LOGFILE
-              helmfile sync --selector name=homebridge 2>&1 | tee -a $LOGFILE
-              ;;
-            "tailscale")
-              echo "🎯 Syncing Tailscale stack only..." | tee -a $LOGFILE
-              helmfile sync --selector name=tailscale 2>&1 | tee -a $LOGFILE
-              ;;
-            "networking-only")
-              echo "🎯 Networking-only sync done (MetalLB + Longhorn)." | tee -a $LOGFILE
-              ;;
+            all) SERVICES=("pihole-stack" "homebridge" "tailscale") ;;
+            pihole) SERVICES=("pihole-stack") ;;
+            homebridge) SERVICES=("homebridge") ;;
+            tailscale) SERVICES=("tailscale") ;;
+            networking-only) SERVICES=() ;;
           esac
 
-          STATUS=$?
+          FAILED=()
 
-          echo "--------------------------------------------------------" | tee -a $LOGFILE
-          if [ $STATUS -eq 0 ]; then
-            echo "✅ SUCCESS: Redeploy finished at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a $LOGFILE
-          else
-            echo "❌ FAILED (Exit Code: $STATUS)" | tee -a $LOGFILE
-            exit $STATUS
+          for svc in "${SERVICES[@]}"; do
+            echo "🎯 Syncing $svc..."
+            if ! helmfile sync --selector name="$svc"; then
+              FAILED+=("$svc")
+            fi
+          done
+
+          if [ ${#FAILED[@]} -gt 0 ]; then
+            echo "❌ Failed services: ${FAILED[*]}"
+
+            for svc in "${FAILED[@]}"; do
+              case "$svc" in
+                pihole-stack) rollback_if_needed "pihole-stack" "pihole" ;;
+                homebridge)   rollback_if_needed "homebridge"   "homebridge" ;;
+                tailscale)    rollback_if_needed "tailscale"    "tailscale" ;;
+              esac
+            done
+
+            exit 1
           fi
-          echo "========================================================" | tee -a $LOGFILE
+
+          echo "✅ Redeploy completed successfully."
 
       - name: 🔄 Restart Deployments (SAFE)
         if: success()
         shell: bash
         run: |
-          TARGET="${{ github.event.inputs.target || 'all' }}"
-          source /tmp/safe_restart.sh
+          set -euo pipefail
+
+          safe_restart() {
+            local NS=$1
+            local DEPLOY=$2
+
+            echo "🔄 Restarting $DEPLOY in $NS"
+            kubectl rollout restart "deploy/$DEPLOY" -n "$NS"
+            kubectl rollout status "deploy/$DEPLOY" -n "$NS" --timeout=180s
+          }
+
+          TARGET="${{ github.event.inputs.target }}"
 
           case "$TARGET" in
-            "all")
+            all)
               safe_restart "pihole" "pihole-v6"
               safe_restart "homebridge" "homebridge"
               safe_restart "tailscale" "tailscale-operator"
               ;;
-            "pihole")
+            pihole)
               safe_restart "pihole" "pihole-v6"
               ;;
-            "homebridge")
+            homebridge)
               safe_restart "homebridge" "homebridge"
               ;;
-            "tailscale")
+            tailscale)
               safe_restart "tailscale" "tailscale-operator"
               ;;
-            "networking-only")
-              echo "No app restarts for networking-only mode."
+            networking-only)
+              echo "No restarts needed."
               ;;
           esac

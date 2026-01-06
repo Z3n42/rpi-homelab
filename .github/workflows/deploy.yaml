@@ -8,9 +8,10 @@ on:
 
 jobs:
   deploy:
-    runs-on: self-hosted 
+    runs-on: self-hosted
+
     steps:
-      - name: Check out code
+      - name: Checkout
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
@@ -18,22 +19,17 @@ jobs:
       - name: 🧹 Log Rotation & Cleanup
         run: |
           LOG_DIR="/home/pi/logs"
-          mkdir -p $LOG_DIR
-          
-          echo "--- 🔄 Starting Log Rotation ---"
-          
+          mkdir -p "$LOG_DIR"
+
           if [ -f "$LOG_DIR/deploy.log" ]; then
-             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-             mv "$LOG_DIR/deploy.log" "$LOG_DIR/archive-deploy-$TIMESTAMP.log"
-             echo "Previous log archived: archive-deploy-$TIMESTAMP.log"
+            TS=$(date +%Y%m%d-%H%M%S)
+            mv "$LOG_DIR/deploy.log" "$LOG_DIR/archive-deploy-$TS.log"
           fi
-          
-          find $LOG_DIR -name "archive-deploy-*.log" -mtime +30 -type f -delete
-          echo "Old logs (>30 days) deleted."
+
+          find "$LOG_DIR" -name "archive-deploy-*.log" -mtime +30 -delete
 
       - name: 🔍 Verify Environment
         run: |
-          echo "Checking tools..."
           kubectl version --client
           helmfile --version
           sops --version
@@ -41,41 +37,27 @@ jobs:
       - name: 🚑 Fix Traefik Conflicts
         run: |
           if kubectl get ingressclass traefik -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}' | grep -q "Helm"; then
-             CURRENT_NS=$(kubectl get ingressclass traefik -o jsonpath='{.metadata.annotations.meta\.helm\.sh/release-namespace}')
-             if [ "$CURRENT_NS" == "kube-system" ]; then
-                echo "⚠️ Found zombie Traefik IngressClass from kube-system. Deleting..."
-                kubectl delete ingressclass traefik --ignore-not-found=true
-             else
-                echo "✅ Traefik IngressClass is owned by $CURRENT_NS. All good."
-             fi
+            NS=$(kubectl get ingressclass traefik -o jsonpath='{.metadata.annotations.meta\.helm\.sh/release-namespace}')
+            if [ "$NS" = "kube-system" ]; then
+              kubectl delete ingressclass traefik --ignore-not-found=true
+            fi
           fi
 
       - name: 🔍 Detect Changed Services
         shell: bash
         run: |
-          echo "🔍 Detecting changed services..."
-
           BEFORE="${{ github.event.before }}"
           AFTER="${{ github.sha }}"
 
-          # Si BEFORE es todo ceros, significa que el evento es un push de tag
           if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            echo "⚠️ Tag push detected. Using previous commit instead of github.event.before."
             BEFORE=$(git rev-parse HEAD~1)
           fi
 
-          echo "Comparing:"
-          echo "  BEFORE = $BEFORE"
-          echo "  AFTER  = $AFTER"
-
-          CHANGED=$(git diff --name-only $BEFORE $AFTER || true)
-
-          echo "Changed files:"
-          echo "$CHANGED"
+          CHANGED=$(git diff --name-only "$BEFORE" "$AFTER" || true)
 
           SERVICES=()
-          for file in $CHANGED; do
-            case "$file" in
+          for f in $CHANGED; do
+            case "$f" in
               manifests/pihole/*|values/pihole*|secrets/pihole*)
                 SERVICES+=("pihole-stack")
                 ;;
@@ -85,72 +67,69 @@ jobs:
               manifests/tailscale/*|values/tailscale*)
                 SERVICES+=("tailscale")
                 ;;
-              manifests/metallb/*|values/metallb*)
-                SERVICES+=("metallb")
-                ;;
-              manifests/longhorn/*|values/longhorn*)
-                SERVICES+=("longhorn")
-                ;;
-              manifests/traefik/*|values/traefik*)
-                SERVICES+=("traefik")
-                ;;
             esac
           done
 
-          if [[ " ${SERVICES[@]} " =~ " pihole-stack " ]] || \
-             [[ " ${SERVICES[@]} " =~ " homebridge " ]]; then
-            SERVICES+=("traefik")
-          fi
+          printf "%s\n" "${SERVICES[@]}" | sort -u > /tmp/changed_services.list
 
-          UNIQUE=$(echo "${SERVICES[@]}" | tr ' ' '\n' | sort -u)
-          echo "$UNIQUE" > /tmp/changed_services.list
-
-          echo "🎯 Services to sync:"
-          cat /tmp/changed_services.list
-
-      - name: 🚀 Deploy with Helmfile
+      - name: 🚀 Deploy with Helmfile (with rollback safeguard)
+        shell: bash
         run: |
+          set -euo pipefail
+
+          rollback_if_needed() {
+            local RELEASE=$1
+            local NS=$2
+
+            PREV=$(helm history "$RELEASE" -n "$NS" | awk 'NR==2{print $1}')
+            NEW=$(helm history "$RELEASE" -n "$NS" | awk 'NR==2{print $1}')
+
+            if [ "$NEW" -gt "$PREV" ]; then
+              echo "⚠️ Rolling back $RELEASE to revision $PREV"
+              helm rollback "$RELEASE" "$PREV" -n "$NS"
+            else
+              echo "ℹ️ No rollback needed for $RELEASE"
+            fi
+          }
+
           LOGFILE="/home/pi/logs/deploy.log"
           mkdir -p "$(dirname "$LOGFILE")"
 
-          {
-            echo "🚀 START DEPLOY: $(date '+%Y-%m-%d %H:%M:%S')"
-            echo "Commit: ${{ github.sha }}"
-            echo "Message: ${{ github.event.head_commit.message }}"
-            echo "--------------------------------------------------------"
-          } | tee -a $LOGFILE
+          echo "🎯 Syncing core networking..."
+          helmfile sync --selector name=metallb
+          helmfile sync --selector name=longhorn
 
-          set -o pipefail
-
-          echo "🎯 Syncing core networking..." | tee -a $LOGFILE
-          helmfile sync --selector name=metallb 2>&1 | tee -a $LOGFILE
-          helmfile sync --selector name=longhorn 2>&1 | tee -a $LOGFILE
+          FAILED=()
 
           if [ -s /tmp/changed_services.list ]; then
             for svc in $(cat /tmp/changed_services.list); do
-              echo "🎯 Syncing $svc..." | tee -a $LOGFILE
-              helmfile sync --selector name=$svc 2>&1 | tee -a $LOGFILE
+              echo "🎯 Syncing $svc..."
+              if ! helmfile sync --selector name="$svc"; then
+                FAILED+=("$svc")
+              fi
             done
           else
-            echo "⚠️ No changed services detected. Skipping app sync." | tee -a $LOGFILE
+            echo "⚠️ No changed services detected."
           fi
 
-          STATUS=$?
-          echo "--------------------------------------------------------" | tee -a $LOGFILE
-          if [ $STATUS -eq 0 ]; then
-            echo "✅ SUCCESS: Deployment finished at $(date '+%Y-%m-%d %H:%M:%S')" | tee -a $LOGFILE
-            echo "🔍 Verificando Pi-hole DNS IP..." | tee -a $LOGFILE
-            kubectl get svc -n pihole | grep LoadBalancer | tee -a $LOGFILE
-          else
-            echo "❌ FAILED (Exit Code: $STATUS)" | tee -a $LOGFILE
-            exit $STATUS
+          if [ ${#FAILED[@]} -gt 0 ]; then
+            echo "❌ Failed services: ${FAILED[*]}"
+
+            for svc in "${FAILED[@]}"; do
+              case "$svc" in
+                pihole-stack) rollback_if_needed "pihole-stack" "pihole" ;;
+                homebridge)   rollback_if_needed "homebridge"   "homebridge" ;;
+                tailscale)    rollback_if_needed "tailscale"    "tailscale" ;;
+              esac
+            done
+
+            exit 1
           fi
-          echo "========================================================" | tee -a $LOGFILE
+
+          echo "✅ Deployment completed successfully."
 
       - name: 🔍 Final Health Check
         if: success()
         run: |
-          echo "🎯 IP Status:"
           kubectl get svc -A | grep LoadBalancer
-          echo "🎯 Pod Status (Errors only):"
           kubectl get pods -A | grep -v "Running\|Completed" || echo "All pods running!"
