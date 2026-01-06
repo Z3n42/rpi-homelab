@@ -34,15 +34,6 @@ jobs:
           helmfile --version
           sops --version
 
-      - name: 🚑 Fix Traefik Conflicts
-        run: |
-          if kubectl get ingressclass traefik -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}' | grep -q "Helm"; then
-            NS=$(kubectl get ingressclass traefik -o jsonpath='{.metadata.annotations.meta\.helm\.sh/release-namespace}')
-            if [ "$NS" = "kube-system" ]; then
-              kubectl delete ingressclass traefik --ignore-not-found=true
-            fi
-          fi
-
       - name: 🔍 Detect Changed Services
         shell: bash
         run: |
@@ -91,9 +82,6 @@ jobs:
               echo "ℹ️ No rollback needed for $RELEASE"
             fi
           }
-
-          LOGFILE="/home/pi/logs/deploy.log"
-          mkdir -p "$(dirname "$LOGFILE")"
 
           echo "🎯 Syncing core networking..."
           helmfile sync --selector name=metallb
