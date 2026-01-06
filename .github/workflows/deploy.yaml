@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: 🧹 Clean entire workspace (fix stale Helmfile)
         run: |
-          rm -rf /home/pi/actions-runner/_work/rpi-homelab/*
+         rm -rf /home/pi/actions-runner/_work/rpi-homelab/rpi-homelab/*
 
       - name: Checkout
         uses: actions/checkout@v3
