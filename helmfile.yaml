@@ -64,23 +64,30 @@ releases:
     needs: [traefik-system/traefik-crds, metallb-system/metallb-config]
     values:
       - installationCRDs: false
-
+      - deployment:
+          annotations:
+            redeploy-timestamp: "{{ now }}"
       - api:
           dashboard: true
           insecure: true
-
+      - logs:
+          general:
+            level: INFO
       - additionalArguments:
           - "--entryPoints.web.address=:8000"
           - "--entryPoints.websecure.address=:8443"
-
+          - "--entryPoints.websecure.http.tls=true"
       - ports:
           web:
             port: 8000
             exposedPort: 80
+            protocol: TCP
+            expose: true
           websecure:
             port: 8443
             exposedPort: 443
-
+            protocol: TCP
+            expose: true
       - service:
           spec:
             type: LoadBalancer
