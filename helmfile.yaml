@@ -221,6 +221,7 @@ releases:
   # -----------------------------
   - name: tailscale-oauth-secret
     namespace: tailscale
+    installed: true
     chart: bedag/raw
     createNamespace: true
     values:
@@ -251,6 +252,9 @@ releases:
           logging: "info"
           defaultTags:
             - tag:server
+      - deployment:
+          annotations:
+            secret-hash: "{{ .Values.tailscale.oauth | toYaml | sha256sum }}"
 
   # -----------------------------
   # TRAEFIK RESOURCES
