@@ -22,6 +22,10 @@ environments:
 
 ---
 releases:
+
+  # -----------------------------
+  # METALLB
+  # -----------------------------
   - name: metallb
     namespace: metallb-system
     chart: metallb/metallb
@@ -35,16 +39,23 @@ releases:
   - name: metallb-config
     namespace: metallb-system
     chart: bedag/raw
-    needs: [metallb-system/metallb]
+    needs:
+      - metallb
     values:
       - values/metallb-config.yaml.gotmpl
 
+  # -----------------------------
+  # LONGHORN
+  # -----------------------------
   - name: longhorn
     namespace: longhorn-system
     chart: longhorn/longhorn
     installed: true
     values: [values/longhorn.yaml]
 
+  # -----------------------------
+  # TRAEFIK
+  # -----------------------------
   - name: traefik-crds
     namespace: traefik-system
     createNamespace: true
@@ -61,7 +72,9 @@ releases:
     namespace: traefik-system
     chart: traefik/traefik
     version: "28.1.0"
-    needs: [traefik-system/traefik-crds, metallb-system/metallb-config]
+    needs:
+      - traefik-crds
+      - metallb-config
     values:
       - installationCRDs: false
       - deployment:
@@ -135,22 +148,30 @@ releases:
               name: edgeingresses.hub.traefik.io
             $patch: delete
 
+  # -----------------------------
+  # PIHOLE
+  # -----------------------------
   - name: pihole-stack
     namespace: pihole
     chart: bedag/raw
     createNamespace: true
-    needs: 
-      - metallb-system/metallb
-      - longhorn-system/longhorn
-      - traefik-system/traefik
+    needs:
+      - metallb
+      - longhorn
+      - traefik
     values:
       - manifests/pihole/pihole-unbound-v6.yaml.gotmpl
 
+  # -----------------------------
+  # HOMEBRIDGE
+  # -----------------------------
   - name: homebridge
     namespace: homebridge
     chart: bjw-s/app-template
-    needs: [metallb-system/metallb, longhorn-system/longhorn]
     createNamespace: true
+    needs:
+      - metallb
+      - longhorn
     values:
       - controllers:
           main:
@@ -170,7 +191,7 @@ releases:
                   PUID: "1000"
                   HOMEBRIDGE_CONFIG_UI: "1"
                   HOMEBRIDGE_CONFIG_UI_PORT: "8581"
-        
+
       - service:
           main:
             controller: main
@@ -193,10 +214,34 @@ releases:
             globalMounts:
               - path: /homebridge
 
+  # -----------------------------
+  # TAILSCALE SECRET
+  # -----------------------------
+  - name: tailscale-oauth-secret
+    namespace: tailscale
+    chart: bedag/raw
+    createNamespace: true
+    values:
+      - resources:
+          - apiVersion: v1
+            kind: Secret
+            metadata:
+              name: operator-oauth
+              namespace: tailscale
+            type: Opaque
+            stringData:
+              client_id: "{{ .Values.tailscale.oauth.clientId }}"
+              client_secret: "{{ .Values.tailscale.oauth.clientSecret }}"
+
+  # -----------------------------
+  # TAILSCALE OPERATOR
+  # -----------------------------
   - name: tailscale
     namespace: tailscale
     chart: tailscale/tailscale-operator
-    needs: [metallb-system/metallb]
+    needs:
+      - metallb
+      - tailscale-oauth-secret
     secrets: [secrets/app.sops.yaml]
     values:
       - operatorConfig:
@@ -204,16 +249,23 @@ releases:
           defaultTags:
             - tag:server
 
+  # -----------------------------
+  # TRAEFIK RESOURCES
+  # -----------------------------
   - name: traefik-resources
     chart: bedag/raw
     namespace: traefik-system
-    needs: [traefik-system/traefik]
+    needs:
+      - traefik
     labels:
       domain-version: "{{ .Values.network.domain }}"
     values:
       - resources:
           - {{ tpl (readFile "manifests/traefik/traefik-dashboard.yaml.gotmpl") . | fromYaml | toYaml | indent 12 | trim }}
 
+  # -----------------------------
+  # CLEANUP TOOLS
+  # -----------------------------
   - name: cleanup-tools
     chart: bedag/raw
     namespace: kube-system
