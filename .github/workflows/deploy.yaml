@@ -19,13 +19,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 🧪 Debug Helmfile path
+      - name: 🧪 Debug Helmfile path (deep scan)
         run: |
-          echo "=== Helmfile being used ==="
+          echo "=== Working directory ==="
           pwd
-          ls -R .
-          echo "=== Content of helmfile.yaml ==="
-          cat helmfile.yaml
+
+          echo "=== Workspace content (top-level) ==="
+          ls -al .
+
+          echo "=== Searching for ALL helmfile.yaml files ==="
+          find /home/pi/actions-runner/_work -maxdepth 5 -type f -name "helmfile.yaml" -print
+
+          echo "=== Searching for helmfile*.yaml ==="
+          find /home/pi/actions-runner/_work -maxdepth 5 -type f -name "helmfile*.yaml" -print
+
+          echo "=== Content of ./helmfile.yaml (if exists) ==="
+          if [ -f helmfile.yaml ]; then
+            cat helmfile.yaml
+          else
+            echo "No helmfile.yaml in current directory"
+          fi
 
       - name: 🧹 Log Rotation & Cleanup
         run: |
