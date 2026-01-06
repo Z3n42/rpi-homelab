@@ -69,20 +69,9 @@ releases:
           dashboard: true
           insecure: true
 
-      - entryPoints:
-          web:
-            address: ":8000"
-          websecure:
-            address: ":8443"
-
-      - providers:
-          kubernetesCRD:
-            enabled: true
-          kubernetesIngress:
-            enabled: true
-            ingressClass:
-              enabled: true
-              isDefaultClass: true
+      - additionalArguments:
+          - "--entryPoints.web.address=:8000"
+          - "--entryPoints.websecure.address=:8443"
 
       - ports:
           web:
