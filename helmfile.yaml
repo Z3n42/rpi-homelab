@@ -59,12 +59,22 @@ releases:
 
   - name: traefik
     namespace: traefik-system
-    createNamespace: true
     chart: traefik/traefik
     version: "28.1.0"
     needs: [traefik-system/traefik-crds, metallb-system/metallb-config]
     values:
       - installationCRDs: false
+
+      - api:
+          dashboard: true
+          insecure: true
+
+      - entryPoints:
+          web:
+            address: ":8000"
+          websecure:
+            address: ":8443"
+
       - providers:
           kubernetesCRD:
             enabled: true
@@ -73,26 +83,19 @@ releases:
             ingressClass:
               enabled: true
               isDefaultClass: true
+
       - ports:
           web:
             port: 8000
             exposedPort: 80
-            protocol: TCP
           websecure:
             port: 8443
             exposedPort: 443
-            protocol: TCP
+
       - service:
           spec:
             type: LoadBalancer
             loadBalancerIP: "{{ .Values.network.services.traefik.ip }}"
-      - logs:
-          general:
-            level: INFO
-      - persistence:
-          enabled: true
-          storageClass: longhorn
-          size: 1Gi
 
   - name: traefik-cleanup-crds
     namespace: traefik-system
