@@ -88,7 +88,7 @@ jobs:
 
           echo "✅ Redeploy completed successfully."
 
-      - name: 🔄 Restart Deployments (SAFE)
+      - name: 🔄 Restart Deployments (SAFE + diagnostic)
         if: success()
         shell: bash
         run: |
@@ -100,7 +100,25 @@ jobs:
 
             echo "🔄 Restarting $DEPLOY in $NS"
             kubectl rollout restart "deploy/$DEPLOY" -n "$NS"
-            kubectl rollout status "deploy/$DEPLOY" -n "$NS" --timeout=180s
+
+            echo "⏳ Waiting for rollout..."
+            if ! kubectl rollout status "deploy/$DEPLOY" -n "$NS" --timeout=600s; then
+              echo "❌ Rollout failed for $DEPLOY in $NS"
+
+              echo "📄 Deployment describe:"
+              kubectl describe deploy "$DEPLOY" -n "$NS" || true
+
+              echo "📄 Pod list:"
+              kubectl get pods -n "$NS" -o wide || true
+
+              POD=$(kubectl get pods -n "$NS" -o jsonpath='{.items[0].metadata.name}')
+              echo "📄 Logs from pod: $POD"
+              kubectl logs -n "$NS" "$POD" --all-containers || true
+
+              exit 1
+            fi
+
+            echo "✅ Rollout completed successfully for $DEPLOY"
           }
 
           TARGET="${{ github.event.inputs.target }}"
