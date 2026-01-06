@@ -34,13 +34,14 @@ releases:
         showlogs: true
         command: "kubectl"
         args: ["wait", "--namespace", "metallb-system", "--for=condition=ready", "pod", "--selector=app.kubernetes.io/name=metallb", "--timeout=90s"]
-    values: [values/metallb.yaml.gotmpl]
+    values:
+      - values/metallb.yaml.gotmpl
 
   - name: metallb-config
     namespace: metallb-system
     chart: bedag/raw
     needs:
-      - metallb
+      - metallb-system/metallb
     values:
       - values/metallb-config.yaml.gotmpl
 
@@ -51,7 +52,8 @@ releases:
     namespace: longhorn-system
     chart: longhorn/longhorn
     installed: true
-    values: [values/longhorn.yaml]
+    values:
+      - values/longhorn.yaml
 
   # -----------------------------
   # TRAEFIK
@@ -73,8 +75,8 @@ releases:
     chart: traefik/traefik
     version: "28.1.0"
     needs:
-      - traefik-crds
-      - metallb-config
+      - traefik-system/traefik-crds
+      - metallb-system/metallb-config
     values:
       - installationCRDs: false
       - deployment:
@@ -156,9 +158,9 @@ releases:
     chart: bedag/raw
     createNamespace: true
     needs:
-      - metallb
-      - longhorn
-      - traefik
+      - metallb-system/metallb
+      - longhorn-system/longhorn
+      - traefik-system/traefik
     values:
       - manifests/pihole/pihole-unbound-v6.yaml.gotmpl
 
@@ -170,8 +172,8 @@ releases:
     chart: bjw-s/app-template
     createNamespace: true
     needs:
-      - metallb
-      - longhorn
+      - metallb-system/metallb
+      - longhorn-system/longhorn
     values:
       - controllers:
           main:
@@ -240,9 +242,10 @@ releases:
     namespace: tailscale
     chart: tailscale/tailscale-operator
     needs:
-      - metallb
-      - tailscale-oauth-secret
-    secrets: [secrets/app.sops.yaml]
+      - metallb-system/metallb
+      - tailscale/tailscale-oauth-secret
+    secrets:
+      - secrets/app.sops.yaml
     values:
       - operatorConfig:
           logging: "info"
@@ -256,7 +259,7 @@ releases:
     chart: bedag/raw
     namespace: traefik-system
     needs:
-      - traefik
+      - traefik-system/traefik
     labels:
       domain-version: "{{ .Values.network.domain }}"
     values:
