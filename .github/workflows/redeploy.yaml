@@ -129,3 +129,6 @@ jobs:
               safe_restart "tailscale" "tailscale-operator"
               ;;
             "networking-only")
+              echo "No app restarts for networking-only mode."
+              ;;
+          esac
