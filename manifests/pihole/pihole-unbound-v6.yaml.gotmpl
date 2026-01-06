@@ -362,6 +362,8 @@ resources:
         metallb.universe.tf/address-pool: pihole-pool
         metallb.universe.tf/loadBalancerIPs: "{{ .Values.network.services.pihole.primary_ip }}"
         metallb.universe.tf/allow-shared-ip: "pihole-shared"
+        tailscale.com/expose: "true"
+        tailscale.com/hostname: "pihole-dns-homelab"
     spec:
       selector:
         app: pihole
@@ -386,6 +388,8 @@ resources:
         metallb.universe.tf/address-pool: pihole-pool
         metallb.universe.tf/loadBalancerIPs: "{{ .Values.network.services.pihole.web_ip }}"
         metallb.universe.tf/allow-shared-ip: "pihole-shared"
+        tailscale.com/expose: "true"
+        tailscale.com/hostname: "pihole-homelab"
     spec:
       selector:
         app: pihole
