@@ -1,5 +1,5 @@
 network:
-  domain: "home.lan"
+  domain: "lan"
   node:
     zenpi_ip: "192.168.1.130"
   metallb:

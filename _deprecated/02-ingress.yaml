@@ -7,7 +7,7 @@ metadata:
     kubernetes.io/ingress.class: traefik
 spec:
   rules:
-    - host: pihole.home.lan
+    - host: pihole.local
       http:
         paths:
           - path: /
