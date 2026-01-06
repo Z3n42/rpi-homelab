@@ -229,12 +229,14 @@ releases:
           logging: "info"
           defaultTags:
             - tag:server
-          extraEnv:
+      - operator:
+          env:
             - name: OPERATOR_SECRET
               value: tailscale-auth
       - deployment:
           annotations:
             secret-hash: "{{ .Values.tailscale.oauth | toYaml | sha256sum }}"
+            secret-hash-authkey: "{{ .Values.tailscale.authKey | sha256sum }}"
 
   # -----------------------------
   # TRAEFIK RESOURCES
