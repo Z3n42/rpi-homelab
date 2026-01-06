@@ -108,48 +108,6 @@ releases:
             type: LoadBalancer
             loadBalancerIP: "{{ .Values.network.services.traefik.ip }}"
 
-  - name: traefik-cleanup-crds
-    namespace: traefik-system
-    chart: bedag/raw
-    needs: []
-    values:
-      - resources:
-          - apiVersion: apiextensions.k8s.io/v1
-            kind: CustomResourceDefinition
-            metadata:
-              name: accesscontrolpolicies.hub.traefik.io
-            $patch: delete
-          - apiVersion: apiextensions.k8s.io/v1
-            kind: CustomResourceDefinition
-            metadata:
-              name: apiaccesses.hub.traefik.io
-            $patch: delete
-          - apiVersion: apiextensions.k8s.io/v1
-            kind: CustomResourceDefinition
-            metadata:
-              name: apiportals.hub.traefik.io
-            $patch: delete
-          - apiVersion: apiextensions.k8s.io/v1
-            kind: CustomResourceDefinition
-            metadata:
-              name: apiratelimits.hub.traefik.io
-            $patch: delete
-          - apiVersion: apiextensions.k8s.io/v1
-            kind: CustomResourceDefinition
-            metadata:
-              name: apis.hub.traefik.io
-            $patch: delete
-          - apiVersion: apiextensions.k8s.io/v1
-            kind: CustomResourceDefinition
-            metadata:
-              name: apiversions.hub.traefik.io
-            $patch: delete
-          - apiVersion: apiextensions.k8s.io/v1
-            kind: CustomResourceDefinition
-            metadata:
-              name: edgeingresses.hub.traefik.io
-            $patch: delete
-
   # -----------------------------
   # PIHOLE
   # -----------------------------
