@@ -174,30 +174,30 @@ releases:
             globalMounts:
               - path: /homebridge
 
-  # -----------------------------
-  # TAILSCALE SECRET
-  # -----------------------------
-  - name: tailscale-oauth-secret
-    namespace: tailscale
-    installed: true
-    chart: bedag/raw
-    createNamespace: true
-    values:
-      - resources:
-          - apiVersion: v1
-            kind: Secret
-            metadata:
-              name: operator-oauth
-              namespace: tailscale
-            type: Opaque
-            stringData:
-              client_id: "{{ .Values.tailscale.oauth.clientId }}"
-              client_secret: "{{ .Values.tailscale.oauth.clientSecret }}"
+  # # -----------------------------
+  # # TAILSCALE SECRET
+  # # -----------------------------
+  # - name: tailscale-oauth-secret
+  #   namespace: tailscale
+  #   installed: true
+  #   chart: bedag/raw
+  #   createNamespace: true
+  #   values:
+  #     - resources:
+  #         - apiVersion: v1
+  #           kind: Secret
+  #           metadata:
+  #             name: operator-oauth
+  #             namespace: tailscale
+  #           type: Opaque
+  #           stringData:
+  #             client_id: "{{ .Values.tailscale.oauth.clientId }}"
+  #             client_secret: "{{ .Values.tailscale.oauth.clientSecret }}"
 
   # -----------------------------
   # TAILSCALE AUTH KEY SECRET
   # -----------------------------
-  - name: tailscale-auth-secret
+  - name: tailscale-operator-secret
     namespace: tailscale
     installed: true
     chart: bedag/raw
@@ -207,7 +207,7 @@ releases:
           - apiVersion: v1
             kind: Secret
             metadata:
-              name: tailscale-auth
+              name: operator
               namespace: tailscale
             type: Opaque
             stringData:
@@ -221,7 +221,7 @@ releases:
     chart: tailscale/tailscale-operator
     needs:
       - metallb-system/metallb
-      - tailscale/tailscale-oauth-secret
+      - tailscale/tailscale-operator-secret
     secrets:
       - secrets/app.sops.yaml
     values:
@@ -229,10 +229,6 @@ releases:
           logging: "info"
           defaultTags:
             - tag:server
-      - operator:
-          env:
-            - name: OPERATOR_SECRET
-              value: tailscale-auth
       - deployment:
           annotations:
             secret-hash: "{{ .Values.tailscale.oauth | toYaml | sha256sum }}"
