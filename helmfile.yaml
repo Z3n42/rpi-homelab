@@ -208,7 +208,7 @@ releases:
     values:
       - operatorConfig:
           logging: "info"
-        deployment:
+      - deployment:
           annotations:
             secret-hash-oauth: "{{ .Values.tailscale.oauth | toYaml | sha256sum }}"
 
@@ -223,7 +223,7 @@ releases:
       - tailscale/tailscale
     values:
       - resources:
-          - {{ tpl (readFile "manifests/tailscale/tailscale-subnet-router.yaml.gotmpl") . | indent 12 }}
+          - {{ tpl (readFile "manifests/tailscale/tailscale-subnet-router.yaml.gotmpl") . | indent 12 | trim }}
 
   # -----------------------------
   # TRAEFIK RESOURCES
