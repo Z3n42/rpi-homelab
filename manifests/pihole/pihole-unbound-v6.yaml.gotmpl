@@ -86,7 +86,6 @@ resources:
         requests:
           storage: 100Mi
 
-  # Critical initialization Job - must run BEFORE Deployment
   - apiVersion: batch/v1
     kind: Job
     metadata:
@@ -151,7 +150,6 @@ resources:
                     fi
                   done
                   
-                  # Remove old backups
                   if ls /etc/pihole/*.conf.bak 1> /dev/null 2>&1; then
                     echo "  Removing: *.conf.bak files"
                     rm -f /etc/pihole/*.conf.bak
@@ -299,6 +297,29 @@ resources:
                         pihole setpassword "$PASSWORD" || echo "[postStart] WARNING: setpasswd failed"
 
                         echo "[postStart] Done"
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "256Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"
+              livenessProbe:
+                httpGet:
+                  path: /admin/
+                  port: 80
+                initialDelaySeconds: 60
+                periodSeconds: 30
+                timeoutSeconds: 5
+                failureThreshold: 3
+              readinessProbe:
+                httpGet:
+                  path: /admin/
+                  port: 80
+                initialDelaySeconds: 30
+                periodSeconds: 10
+                timeoutSeconds: 3
+                failureThreshold: 3
 
             - name: unbound
               image: crazymax/unbound:1.24.0
@@ -340,15 +361,12 @@ resources:
             - name: pihole-storage
               persistentVolumeClaim:
                 claimName: pihole-pvc-v6
-
             - name: dnsmasq-storage
               persistentVolumeClaim:
                 claimName: pihole-dnsmasq-pvc
-
             - name: pihole-password
               secret:
                 secretName: pihole-web-password
-
             - name: unbound-conf
               configMap:
                 name: unbound-config
@@ -362,8 +380,6 @@ resources:
         metallb.universe.tf/address-pool: pihole-pool
         metallb.universe.tf/loadBalancerIPs: "{{ .Values.network.services.pihole.primary_ip }}"
         metallb.universe.tf/allow-shared-ip: "pihole-shared"
-        tailscale.com/expose: "true"
-        tailscale.com/hostname: "pihole-dns-homelab"
     spec:
       selector:
         app: pihole
@@ -388,12 +404,51 @@ resources:
         metallb.universe.tf/address-pool: pihole-pool
         metallb.universe.tf/loadBalancerIPs: "{{ .Values.network.services.pihole.web_ip }}"
         metallb.universe.tf/allow-shared-ip: "pihole-shared"
-        tailscale.com/expose: "true"
-        tailscale.com/hostname: "pihole-homelab"
     spec:
       selector:
         app: pihole
       type: LoadBalancer
+      ports:
+        - name: http
+          port: 80
+          targetPort: 80
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: pihole-dns-tailscale
+      namespace: pihole
+      annotations:
+        tailscale.com/hostname: pihole-dns-homelab
+        tailscale.com/tags: tag:server
+    spec:
+      type: LoadBalancer
+      loadBalancerClass: tailscale
+      selector:
+        app: pihole
+      ports:
+        - name: dns-udp
+          port: 53
+          protocol: UDP
+          targetPort: 53
+        - name: dns-tcp
+          port: 53
+          protocol: TCP
+          targetPort: 53
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: pihole-web-tailscale
+      namespace: pihole
+      annotations:
+        tailscale.com/hostname: pihole-homelab
+        tailscale.com/tags: tag:server
+    spec:
+      type: LoadBalancer
+      loadBalancerClass: tailscale
+      selector:
+        app: pihole
       ports:
         - name: http
           port: 80
