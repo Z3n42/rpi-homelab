@@ -174,30 +174,10 @@ releases:
             globalMounts:
               - path: /homebridge
 
-  # # -----------------------------
-  # # TAILSCALE SECRET
-  # # -----------------------------
-  # - name: tailscale-oauth-secret
-  #   namespace: tailscale
-  #   installed: true
-  #   chart: bedag/raw
-  #   createNamespace: true
-  #   values:
-  #     - resources:
-  #         - apiVersion: v1
-  #           kind: Secret
-  #           metadata:
-  #             name: operator-oauth
-  #             namespace: tailscale
-  #           type: Opaque
-  #           stringData:
-  #             client_id: "{{ .Values.tailscale.oauth.clientId }}"
-  #             client_secret: "{{ .Values.tailscale.oauth.clientSecret }}"
-
   # -----------------------------
-  # TAILSCALE AUTH KEY SECRET
+  # TAILSCALE OAUTH SECRET
   # -----------------------------
-  - name: tailscale-operator-secret
+  - name: tailscale-oauth-secret
     namespace: tailscale
     installed: true
     chart: bedag/raw
@@ -207,11 +187,12 @@ releases:
           - apiVersion: v1
             kind: Secret
             metadata:
-              name: operator
+              name: operator-oauth
               namespace: tailscale
             type: Opaque
             stringData:
-              authkey: "{{ .Values.tailscale.authKey }}"
+              client_id: "{{ .Values.tailscale.oauth.clientId }}"
+              client_secret: "{{ .Values.tailscale.oauth.clientSecret }}"
 
   # -----------------------------
   # TAILSCALE OPERATOR
@@ -221,18 +202,27 @@ releases:
     chart: tailscale/tailscale-operator
     needs:
       - metallb-system/metallb
-      - tailscale/tailscale-operator-secret
+      - tailscale/tailscale-oauth-secret
     secrets:
       - secrets/app.sops.yaml
     values:
       - operatorConfig:
           logging: "info"
-          defaultTags:
-            - tag:server
       - deployment:
           annotations:
-            secret-hash: "{{ .Values.tailscale.oauth | toYaml | sha256sum }}"
-            secret-hash-authkey: "{{ .Values.tailscale.authKey | sha256sum }}"
+            secret-hash-oauth: "{{ .Values.tailscale.oauth | toYaml | sha256sum }}"
+
+  # -----------------------------
+  # TAILSCALE SUBNET ROUTER
+  # -----------------------------
+  - name: tailscale-subnet-router
+    namespace: tailscale
+    chart: bedag/raw
+    needs:
+      - tailscale/tailscale
+    values:
+      - resources:
+          - {{ tpl (readFile "manifests/tailscale/tailscale-subnet-router.yaml.gotmpl") . | fromYaml | toYaml | indent 12 | trim }}
 
   # -----------------------------
   # TRAEFIK RESOURCES
