@@ -217,6 +217,7 @@ releases:
   # -----------------------------
   - name: tailscale-subnet-router
     namespace: tailscale
+    installed: true
     chart: bedag/raw
     needs:
       - tailscale/tailscale
