@@ -222,8 +222,7 @@ releases:
     needs:
       - tailscale/tailscale
     values:
-      - resources:
-          - {{ tpl (readFile "manifests/tailscale/tailscale-subnet-router.yaml.gotmpl") . | fromYaml | toYaml | indent 12 | trim }}
+      - {{ tpl (readFile "manifests/tailscale/tailscale-subnet-router.yaml.gotmpl") . | indent 6 }}
 
   # -----------------------------
   # TRAEFIK RESOURCES
