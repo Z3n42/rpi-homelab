@@ -142,11 +142,13 @@ releases:
               reloader.stakater.com/auto: "true"
             pod:
               hostNetwork: true
+              annotations:
+                rollout-timestamp: "{{ now }}"
             containers:
               main:
                 image:
                   repository: homebridge/homebridge
-                  tag: "2024-05-30"
+                  tag: "2024-04-30"
                 env:
                   TZ: "Europe/Madrid"
                   PGID: "1000"
