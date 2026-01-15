@@ -155,7 +155,6 @@ releases:
                   PUID: "1000"
                   HOMEBRIDGE_CONFIG_UI: "1"
                   HOMEBRIDGE_CONFIG_UI_PORT: "8581"
-                  NODE_OPTIONS: "--openssl-legacy-provider"
 
       - service:
           main:
