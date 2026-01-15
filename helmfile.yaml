@@ -144,13 +144,14 @@ releases:
               main:
                 image:
                   repository: homebridge/homebridge
-                  tag: latest
+                  tag: node-20
                 env:
                   TZ: "Europe/Madrid"
                   PGID: "1000"
                   PUID: "1000"
                   HOMEBRIDGE_CONFIG_UI: "1"
                   HOMEBRIDGE_CONFIG_UI_PORT: "8581"
+                  NODE_OPTIONS: "--openssl-legacy-provider"
 
       - service:
           main:
