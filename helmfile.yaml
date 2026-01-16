@@ -129,6 +129,8 @@ releases:
   # -----------------------------
   - name: homebridge
     namespace: homebridge
+    labels:
+      name: homebridge
     chart: bjw-s/app-template
     createNamespace: true
     needs:
@@ -141,7 +143,6 @@ releases:
             annotations:
               reloader.stakater.com/auto: "true"
             pod:
-              hostNetwork: true
               annotations:
                 rollout-timestamp: "{{ now | unixEpoch }}"
             containers:
