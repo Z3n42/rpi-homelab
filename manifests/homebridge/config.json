@@ -1,0 +1,212 @@
+{
+  "bridge": {
+    "name": "Homebridge",
+    "username": "34:C2:00:00:00:01",
+    "port": 51826,
+    "pin": "456-25-167"
+  },
+
+  "platforms": [
+    {
+      "platform": "miot",
+
+      "common": {
+        "enableAutoDiscovery": false,
+        "mDNSPreserveInstanceName": true
+      },
+
+      "micloud": {
+        "forceMiCloud": false,
+        "useCachedSession": false
+      },
+
+      "devices": [
+        {
+          "name": "Calentador",
+          "ip": "192.168.1.148",
+          "token": "77bab787a855a8366fa42f2930da7f76",
+          "deviceId": "91257261",
+          "model": "zhimi.heater.za1",
+          "pollingInterval": 10,
+          "deepDebugLog": false,
+          "silentLog": false,
+          "deviceEnabled": true,
+          "micloud": {
+            "forceMiCloud": false,
+            "useCachedSession": false
+          },
+          "customAccessory": false,
+          "onlyMainService": false,
+          "buzzerControl": true,
+          "ledControl": true,
+          "childLockControl": true,
+          "modeControl": true,
+          "offDelayControl": false
+        },
+        {
+          "name": "Centralita",
+          "ip": "192.168.1.181",
+          "token": "59716e4f51414769594b594966356873",
+          "deviceId": "374523163",
+          "model": "lumi.gateway.mgl03",
+          "pollingInterval": 10,
+          "deepDebugLog": false,
+          "silentLog": false,
+          "deviceEnabled": true,
+          "micloud": {
+            "forceMiCloud": false,
+            "useCachedSession": false
+          },
+          "customAccessory": false,
+          "onlyMainService": false,
+          "buzzerControl": true,
+          "ledControl": true,
+          "childLockControl": true,
+          "modeControl": true
+        },
+        {
+          "name": "Plafón",
+          "ip": "192.168.1.182",
+          "token": "9b666a17be26d34302447fc6afc23954",
+          "deviceId": "134241461",
+          "model": "yeelink.light.ceiling3",
+          "pollingInterval": 10,
+          "deepDebugLog": false,
+          "silentLog": false,
+          "deviceEnabled": true,
+          "micloud": {
+            "forceMiCloud": false,
+            "useCachedSession": false
+          },
+          "customAccessory": false,
+          "onlyMainService": false,
+          "buzzerControl": true,
+          "ledControl": true,
+          "childLockControl": true,
+          "modeControl": true
+        },
+        {
+          "name": "Mesilla",
+          "ip": "192.168.1.142",
+          "token": "95a96d083988ecebae25d98853fcea0c",
+          "deviceId": "270197671",
+          "model": "yeelink.light.lamp9",
+          "pollingInterval": 10,
+          "deepDebugLog": false,
+          "silentLog": false,
+          "deviceEnabled": true,
+          "micloud": {
+            "forceMiCloud": false,
+            "useCachedSession": false
+          },
+          "customAccessory": false,
+          "onlyMainService": false,
+          "buzzerControl": true,
+          "ledControl": true,
+          "childLockControl": true,
+          "modeControl": true
+        },
+        {
+          "name": "Flexo",
+          "ip": "192.168.1.178",
+          "token": "31d3536e5205c9ab439eb27cc76c5997",
+          "deviceId": "307048973",
+          "model": "yeelink.light.lamp4",
+          "pollingInterval": 10,
+          "deepDebugLog": false,
+          "silentLog": false,
+          "deviceEnabled": true,
+          "micloud": {
+            "forceMiCloud": false,
+            "useCachedSession": false
+          },
+          "customAccessory": false,
+          "onlyMainService": false,
+          "buzzerControl": true,
+          "ledControl": true,
+          "childLockControl": true,
+          "modeControl": true
+        },
+        {
+          "name": "Ventilador",
+          "ip": "192.168.1.156",
+          "token": "b31d520cc8ba513daf1d4f3ffb53bcba",
+          "deviceId": "239139112",
+          "model": "dmaker.fan.1c",
+          "pollingInterval": 10,
+          "deepDebugLog": false,
+          "silentLog": false,
+          "deviceEnabled": true,
+          "micloud": {
+            "forceMiCloud": false,
+            "useCachedSession": false
+          },
+          "customAccessory": false,
+          "onlyMainService": false,
+          "buzzerControl": true,
+          "ledControl": true,
+          "childLockControl": true,
+          "modeControl": true,
+          "swingControl": false,
+          "moveControl": false,
+          "fanLevelControl": false,
+          "ioniserControl": false,
+          "offDelayControl": false
+        },
+        {
+          "name": "Ventilador cama",
+          "ip": "192.168.1.155",
+          "token": "b2f571316d6a1f2a93ed2d67fef8c9b0",
+          "deviceId": "239169314",
+          "model": "dmaker.fan.1c",
+          "pollingInterval": 10,
+          "deepDebugLog": false,
+          "silentLog": false,
+          "deviceEnabled": true,
+          "micloud": {
+            "forceMiCloud": false,
+            "useCachedSession": false
+          },
+          "customAccessory": false,
+          "onlyMainService": false,
+          "buzzerControl": true,
+          "ledControl": true,
+          "childLockControl": true,
+          "modeControl": true,
+          "swingControl": false,
+          "moveControl": false,
+          "fanLevelControl": false,
+          "ioniserControl": false,
+          "offDelayControl": false
+        },
+        {
+          "name": "Control",
+          "ip": "192.168.1.179",
+          "token": "4a4e616666687a7253534f38314f3064",
+          "deviceId": "561193382",
+          "model": "xiaomi.wifispeaker.l05g",
+          "pollingInterval": 10,
+          "deepDebugLog": false,
+          "silentLog": false,
+          "deviceEnabled": true,
+          "micloud": {
+            "forceMiCloud": false,
+            "useCachedSession": false
+          },
+          "customAccessory": false,
+          "onlyMainService": false,
+          "buzzerControl": true,
+          "ledControl": true,
+          "childLockControl": true,
+          "modeControl": true
+        }
+      ]
+    }
+  ],
+
+  "_bridge": {
+    "name": "Homebridge Miot",
+    "username": "0E:47:B1:CC:83:5F",
+    "port": 31332
+  }
+}

@@ -179,11 +179,18 @@ releases:
       - persistence:
           config:
             enabled: true
-            storageClass: "longhorn"
-            accessMode: ReadWriteOnce
-            size: 1Gi
+            type: configMap
+            name: homebridge-config
             globalMounts:
-              - path: /homebridge
+              - path: /homebridge/config.json
+                subPath: config.json
+
+      - configMaps:
+          homebridge-config:
+            data:
+              config.json: |
+                {{ .Files.Get "manifests/homebridge/config.json" | nindent 14 }}
+
 
   # -----------------------------
   # TAILSCALE OAUTH SECRET
