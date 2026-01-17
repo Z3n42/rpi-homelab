@@ -136,25 +136,8 @@ releases:
     needs:
       - metallb-system/metallb
       - longhorn-system/longhorn
-
     values:
-      - configMaps:
-          homebridge-config:
-            enabled: true
-            data:
-              config.json: |
-                {{ readFile "manifests/homebridge/config.json" | nindent 16 }}
-
-        persistence:
-          config:
-            enabled: true
-            type: configMap
-            name: homebridge-config
-            globalMounts:
-              - path: /homebridge/config.json
-                subPath: config.json
-
-        controllers:
+      - controllers:
           main:
             type: deployment
             annotations:
@@ -180,7 +163,7 @@ releases:
                   HOMEBRIDGE_CONFIG_UI_PORT: "8581"
                   AVAHI: "0"
 
-        service:
+      - service:
           main:
             controller: main
             type: LoadBalancer
@@ -192,6 +175,15 @@ releases:
                 port: 8581
               hap:
                 port: 51826
+
+      - persistence:
+          config:
+            enabled: true
+            storageClass: "longhorn"
+            accessMode: ReadWriteOnce
+            size: 1Gi
+            globalMounts:
+              - path: /homebridge
 
   # -----------------------------
   # TAILSCALE OAUTH SECRET
