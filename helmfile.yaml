@@ -140,6 +140,7 @@ releases:
     values:
       - configMaps:
           homebridge-config:
+            enabled: true
             data:
               config.json: |
                 {{ readFile "manifests/homebridge/config.json" | nindent 16 }}
