@@ -189,7 +189,7 @@ releases:
           homebridge-config:
             data:
               config.json: |
-                {{ .Files.Get "manifests/homebridge/config.json" | nindent 14 }}
+                {{ readFile "manifests/homebridge/config.json" | nindent 14 }}
 
 
   # -----------------------------
