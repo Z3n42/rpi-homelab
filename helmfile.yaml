@@ -151,7 +151,7 @@ releases:
               main:
                 image:
                   repository: homebridge/homebridge
-                  tag: "2024-09-03"
+                  tag: "ubuntu"
                 securityContext:
                   capabilities:
                     add:
@@ -163,7 +163,7 @@ releases:
                   PUID: "1000"
                   HOMEBRIDGE_CONFIG_UI: "1"
                   HOMEBRIDGE_CONFIG_UI_PORT: "8581"
-                  AVAHI: "0"
+                  AVAHI: "1"
 
       - service:
           main:
