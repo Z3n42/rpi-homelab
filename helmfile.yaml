@@ -143,6 +143,8 @@ releases:
             annotations:
               reloader.stakater.com/auto: "true"
             pod:
+              hostNetwork: true
+              dnsPolicy: ClusterFirstWithHostNet
               annotations:
                 rollout-timestamp: "{{ now | unixEpoch }}"
             containers:
@@ -173,8 +175,6 @@ releases:
             ports:
               http:
                 port: 8581
-              hap:
-                port: 51826
 
       - persistence:
           config:
