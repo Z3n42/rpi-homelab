@@ -302,6 +302,25 @@ releases:
             pod:
               hostNetwork: true
               dnsPolicy: ClusterFirstWithHostNet
+
+              initContainers:
+                init-cups-config:
+                  image: mwatz/cups:latest
+                  command:
+                    - sh
+                    - -c
+                    - |
+                      echo "🔧 Checking CUPS config PVC..."
+                      if [ -z "$(ls -A /config)" ]; then
+                        echo "📁 PVC empty, initializing with default CUPS config"
+                        cp -r /etc/cups/* /config/
+                      else
+                        echo "✔ PVC already initialized"
+                      fi
+                  volumeMounts:
+                    - name: config
+                      mountPath: /config
+
             containers:
               main:
                 image:
@@ -333,6 +352,7 @@ releases:
             size: 1Gi
             globalMounts:
               - path: /etc/cups
+                subPath: ""
           usb:
             enabled: true
             type: hostPath
