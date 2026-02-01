@@ -299,7 +299,7 @@ releases:
     needs:
       - longhorn-system/longhorn
       - metallb-system/metallb-config
-      - printing/cups-config
+      # - printing/cups-config
     secrets:
       - secrets/app.sops.yaml
     values:
