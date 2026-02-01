@@ -337,6 +337,19 @@ releases:
                   CUPS_ADMIN_USER: "{{ .Values.cups.user }}"
                   CUPS_ADMIN_PASSWORD: "{{ .Values.cups.password }}"
 
+            extraVolumes:
+              - name: cups
+                persistentVolumeClaim:
+                  claimName: cups
+
+            extraVolumeMounts:
+              - name: cups
+                mountPath: /config
+                readOnly: false
+              - name: cups
+                mountPath: /etc/cups
+                readOnly: false
+
       - service:
           main:
             controller: main
@@ -360,16 +373,3 @@ releases:
             hostPath: /dev/bus/usb
             globalMounts:
               - path: /dev/bus/usb
-
-      - extraVolumes:
-          - name: cups
-            persistentVolumeClaim:
-              claimName: cups
-
-      - extraVolumeMounts:
-          - name: cups
-            mountPath: /config
-            readOnly: false
-          - name: cups
-            mountPath: /etc/cups
-            readOnly: false
