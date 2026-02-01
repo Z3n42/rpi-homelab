@@ -346,7 +346,7 @@ releases:
             controller: main
             type: LoadBalancer
             annotations:
-              metallb.universe.tf/address-pool: default-pool
+              metallb.universe.tf/address-pool: pihole-pool
               metallb.universe.tf/loadBalancerIPs: "{{ .Values.network.services.cups.ip }}"
             ports:
               http:
