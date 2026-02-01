@@ -309,22 +309,23 @@ releases:
                   - sh
                   - -c
                   - |
-                    echo "🔧 Checking CUPS config PVC..."
+                    echo "🔧 init: ensure config in PVC and Listen on all interfaces"
+                    # If PVC empty, copy defaults from image into PVC
                     if [ -z "$(ls -A /config 2>/dev/null)" ]; then
-                      echo "📁 PVC empty, initializing with default CUPS config"
-                      cp -r /etc/cups/* /config/
+                      echo "📁 /config empty, copying defaults from image /etc/cups"
+                      cp -a /etc/cups/* /config/ 2>/dev/null || true
                     else
-                      echo "✔ PVC already initialized"
+                      echo "✔ /config already initialized"
                     fi
-                    # Ensure CUPS  on all interfaces (persisted in PVC)
+                    # Force Listen on all interfaces in the PVC copy
                     if [ -f /config/cupsd.conf ]; then
-                      sed -i 's/^Listen localhost:631/Listen 0.0.0.0:631/' /config/cupsd.conf || true
-                    else
-                      sed -i 's/^Listen localhost:631/Listen 0.0.0.0:631/' /etc/cups/cupsd.conf || true
+                      sed -i 's/^Listen[[:space:]]*localhost:631/Listen 0.0.0.0:631/; s/^Listen[[:space:]]*127.0.0.1:631/Listen 0.0.0.0:631/' /config/cupsd.conf || true
                     fi
-                    # Fix permissions
                     chown -R root:root /config || true
                     chmod -R a+rX /config || true
+                volumeMounts:
+                  - name: cups
+                    mountPath: /config
 
             pod:
               dnsPolicy: ClusterFirst
@@ -340,6 +341,10 @@ releases:
                   TZ: "Europe/Madrid"
                   CUPS_ADMIN_USER: "{{ .Values.cups.user }}"
                   CUPS_ADMIN_PASSWORD: "{{ .Values.cups.password }}"
+                volumeMounts:
+                  - name: cups
+                    mountPath: /etc/cups
+                    readOnly: false
 
       - service:
           main:
@@ -358,11 +363,14 @@ releases:
             storageClass: "longhorn"
             accessMode: ReadWriteOnce
             size: 1Gi
-            globalMounts:
-              - path: /config
           usb:
             enabled: true
             type: hostPath
             hostPath: /dev/bus/usb
             globalMounts:
               - path: /dev/bus/usb
+
+      - extraVolumes:
+          - name: cups
+            persistentVolumeClaim:
+              claimName: cups
