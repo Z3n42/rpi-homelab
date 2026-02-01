@@ -302,7 +302,9 @@ releases:
 
             initContainers:
               init-cups-config:
-                image: mwatz/cups:latest
+                image:
+                  repository: mwatz/cups
+                  tag: latest
                 command:
                   - sh
                   - -c
@@ -314,9 +316,6 @@ releases:
                     else
                       echo "✔ PVC already initialized"
                     fi
-                volumeMounts:
-                  - name: config
-                    mountPath: /config
 
             pod:
               hostNetwork: true
@@ -352,8 +351,7 @@ releases:
             accessMode: ReadWriteOnce
             size: 1Gi
             globalMounts:
-              - path: /etc/cups
-                subPath: ""
+              - path: /config
           usb:
             enabled: true
             type: hostPath
