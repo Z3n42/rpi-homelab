@@ -244,7 +244,7 @@ releases:
       - tailscale/tailscale
     values:
       - resources:
-          - {{ tpl (readFile "manifests/tailscale/tailscale-subnet-router.yaml.gotmpl") . | indent 12 | trim }}
+          - '{{ tpl (readFile "manifests/tailscale/tailscale-subnet-router.yaml.gotmpl") . | indent 12 | trim }}'
 
   # -----------------------------
   # TRAEFIK RESOURCES
@@ -258,10 +258,10 @@ releases:
       - homebridge/homebridge
     values:
       - resources:
-          - {{ tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") . | indent 12 | trim }}
-          - {{ tpl (readFile "manifests/ingresses/cups-ingress.yaml.gotmpl") . | indent 12 | trim }}
-          - {{ tpl (readFile "manifests/ingresses/homebridge-ingress.yaml.gotmpl") . | indent 12 | trim }}
- 
+          - '{{ tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") . | indent 12 | trim }}'
+          - '{{ tpl (readFile "manifests/ingresses/cups-ingress.yaml.gotmpl") . | indent 12 | trim }}'
+          - '{{ tpl (readFile "manifests/ingresses/homebridge-ingress.yaml.gotmpl") . | indent 12 | trim }}'
+
   # -----------------------------
   # CLEANUP TOOLS
   # -----------------------------
