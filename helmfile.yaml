@@ -284,6 +284,14 @@ releases:
   # -----------------------------
   # CUPS 
   # -----------------------------
+  - name: cups-config
+    namespace: printing
+    chart: bedag/raw
+    createNamespace: false
+    values:
+      - resources:
+          - {{ tpl (readFile "manifests/cups/cups-config.yaml.gotmpl") . | indent 12 | trim }}
+
   - name: cups
     namespace: printing
     chart: bjw-s/app-template
@@ -291,6 +299,7 @@ releases:
     needs:
       - longhorn-system/longhorn
       - metallb-system/metallb-config
+      - printing/cups-config
     secrets:
       - secrets/app.sops.yaml
     values:
@@ -313,25 +322,35 @@ releases:
                     if [ -z "$(ls -A /config)" ]; then
                       echo "📁 PVC empty, initializing with default CUPS config"
                       cp -r /etc/cups/* /config/
+                      # parchea cupsd.conf en /config para escuchar en 0.0.0.0
+                      sed -i 's/^Listen localhost:631/Listen 0.0.0.0:631/' /config/cupsd.conf || true
                     else
                       echo "✔ PVC already initialized"
+                      sed -i 's/^Listen localhost:631/Listen 0.0.0.0:631/' /config/cupsd.conf || true
                     fi
 
             pod:
               hostNetwork: true
               dnsPolicy: ClusterFirstWithHostNet
-
-            containers:
-              main:
-                image:
-                  repository: mwatz/cups
-                  tag: latest
-                securityContext:
-                  privileged: true
-                env:
-                  TZ: "Europe/Madrid"
-                  CUPS_ADMIN_USER: "{{ .Values.cups.user }}"
-                  CUPS_ADMIN_PASSWORD: "{{ .Values.cups.password }}"
+              containers:
+                - name: main
+                  image:
+                    repository: mwatz/cups
+                    tag: latest
+                  securityContext:
+                    privileged: true
+                  env:
+                    TZ: "Europe/Madrid"
+                    CUPS_ADMIN_USER: "{{ .Values.cups.user }}"
+                    CUPS_ADMIN_PASSWORD: "{{ .Values.cups.password }}"
+                  volumeMounts:
+                    - name: cups-conf
+                      mountPath: /etc/cups/cupsd.conf
+                      subPath: cupsd.conf
+              volumes:
+                - name: cups-conf
+                  configMap:
+                    name: cups-config
 
       - service:
           main:
