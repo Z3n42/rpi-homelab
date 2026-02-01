@@ -345,7 +345,7 @@ releases:
                 port: 631
 
       - persistence:
-          config:
+          cups:
             enabled: true
             storageClass: "longhorn"
             accessMode: ReadWriteOnce
