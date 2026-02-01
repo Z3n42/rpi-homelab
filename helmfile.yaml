@@ -310,16 +310,15 @@ releases:
                   - -c
                   - |
                     echo "🔧 init: prepare /config and force Listen 0.0.0.0"
-                    # If PVC mounted at /config is empty, copy defaults from image /etc/cups
                     if [ -z "$(ls -A /config 2>/dev/null)" ]; then
-                      echo "📁 /config empty, copying defaults from image /etc/cups"
                       cp -a /etc/cups/* /config/ 2>/dev/null || true
-                    else
-                      echo "✔ /config already initialized"
                     fi
-                    # Patch the PVC copy so cupsd listens on all interfaces
+                    # Forzar escucha en todas las interfaces
                     if [ -f /config/cupsd.conf ]; then
                       sed -i 's/^Listen[[:space:]]*localhost:631/Listen 0.0.0.0:631/; s/^Listen[[:space:]]*127.0.0.1:631/Listen 0.0.0.0:631/' /config/cupsd.conf || true
+                      # Permitir acceso a la interfaz web y admin desde la red
+                      sed -i \"s@<Location />[\\s\\S]*</Location>@<Location />\\n  Order allow,deny\\n  Allow from all\\n</Location>@g\" /config/cupsd.conf || true
+                      sed -i \"s@<Location /admin>[\\s\\S]*</Location>@<Location /admin>\\n  Order allow,deny\\n  Allow from all\\n</Location>@g\" /config/cupsd.conf || true
                     fi
                     chown -R root:root /config || true
                     chmod -R a+rX /config || true
