@@ -5,7 +5,7 @@ metadata:
   namespace: printing
 spec:
   routes:
-    - match: Host(`impresora.{{ index .Values "network" "domain" }}`)
+    - match: Host(`cups.{{ index .Values "network" "domain" }}`)
       kind: Rule
       services:
         - name: cups
