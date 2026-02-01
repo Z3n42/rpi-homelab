@@ -343,7 +343,7 @@ releases:
   # -----------------------------
   # INGRESSES CENTRALIZED
   # -----------------------------
-  - name: central-ingresses
+  - name: traefik-resources
     namespace: traefik-system
     chart: bedag/raw
     needs:

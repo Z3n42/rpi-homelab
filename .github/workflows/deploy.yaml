@@ -59,7 +59,7 @@ jobs:
                 SERVICES+=("tailscale")
                 ;;
               manifests/ingresses/*)
-                SERVICES+=("central-ingresses")
+                SERVICES+=("traefik-resources")
                 ;;
               values/network.yaml|secrets/app.sops.yaml|manifests/cups/*)
                 SERVICES+=("cups")
@@ -115,7 +115,7 @@ jobs:
                 homebridge)   rollback_if_needed "homebridge"   "homebridge" ;;
                 tailscale)    rollback_if_needed "tailscale"    "tailscale" ;;
                 cups)         rollback_if_needed "cups"         "printing" ;;
-                central-ingresses) rollback_if_needed "central-ingresses" "traefik-system" ;;
+                traefik-resources) rollback_if_needed "traefik-resources" "traefik-system" ;;
               esac
             done
 

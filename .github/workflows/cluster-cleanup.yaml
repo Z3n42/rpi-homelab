@@ -140,7 +140,7 @@ jobs:
             "traefik")
               echo "🧹 Cleaning Traefik and Ingresses..."
               helmfile destroy --selector name=traefik || true
-              helmfile destroy --selector name=central-ingresses || true
+              helmfile destroy --selector name=traefik-resources || true
               force_delete_ns "traefik-system"
               ;;
 

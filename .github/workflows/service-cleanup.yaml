@@ -68,7 +68,7 @@ jobs:
               cleanup_release "homebridge"
               cleanup_release "tailscale"
               cleanup_release "cups"
-              cleanup_release "central-ingresses" 
+              cleanup_release "traefik-resources" 
               cleanup_services "pihole"
               cleanup_services "homebridge"
               cleanup_services "tailscale"
@@ -92,7 +92,7 @@ jobs:
               cleanup_services "printing"
               ;;
             "ingresses")
-              cleanup_release "central-ingresses"
+              cleanup_release "traefik-resources"
               cleanup_services "traefik-system" 
               ;;
             "unbound")
