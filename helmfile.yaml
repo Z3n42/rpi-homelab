@@ -258,12 +258,14 @@ releases:
     namespace: traefik-system
     needs:
       - traefik-system/traefik
-    labels:
-      domain-version: "{{ .Values.network.domain }}"
+      - printing/cups
+      - homebridge/homebridge
     values:
       - resources:
-          - {{ tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") . | fromYaml | toYaml | indent 12 | trim }}
-
+          - {{ tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") . | indent 12 | trim }}
+          - {{ tpl (readFile "manifests/ingresses/cups-ingress.yaml.gotmpl") . | indent 12 | trim }}
+          - {{ tpl (readFile "manifests/ingresses/homebridge-ingress.yaml.gotmpl") . | indent 12 | trim }}
+ 
   # -----------------------------
   # CLEANUP TOOLS
   # -----------------------------
@@ -339,20 +341,3 @@ releases:
             hostPath: /dev/bus/usb
             globalMounts:
               - path: /dev/bus/usb
-
-  # -----------------------------
-  # INGRESSES CENTRALIZED
-  # -----------------------------
-  - name: traefik-resources
-    namespace: traefik-system
-    chart: bedag/raw
-    needs:
-      - traefik-system/traefik
-      - printing/cups
-      - homebridge/homebridge
-    values:
-      - resources:
-          - {{ tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") . | indent 12 | trim }}
-          - {{ tpl (readFile "manifests/ingresses/cups-ingress.yaml.gotmpl") . | indent 12 | trim }}
-          - {{ tpl (readFile "manifests/ingresses/homebridge-ingress.yaml.gotmpl") . | indent 12 | trim }}
- 
