@@ -1,0 +1,15 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: cups-admin-ui
+  namespace: printing
+spec:
+  routes:
+    - match: Host(`impresora.{{ index .Values "network" "domain" }}`)
+      kind: Rule
+      services:
+        - name: cups
+          port: 631
+
+  tls:
+    certResolver: le

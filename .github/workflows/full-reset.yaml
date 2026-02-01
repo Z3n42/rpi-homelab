@@ -12,6 +12,7 @@ on:
           - 'all'
           - 'pihole'
           - 'homebridge'
+          - 'cups' 
           - 'tailscale'
           - 'storage-only'
       confirm:
@@ -101,7 +102,7 @@ jobs:
             "all")
               echo "💥 FULL RESET: ALL STACKS + LONGHORN PVCs"
               destroy_releases
-              for ns in pihole homebridge tailscale traefik-system metallb-system longhorn-system; do
+              for ns in pihole homebridge tailscale traefik-system metallb-system longhorn-system printing; do 
                 force_delete_ns "$ns"
               done
               wipe_longhorn_pvcs
@@ -120,6 +121,11 @@ jobs:
               echo "💥 FULL RESET: Tailscale only"
               helmfile destroy --selector name=tailscale || true
               force_delete_ns "tailscale"
+              ;;
+            "cups")
+              echo "💥 FULL RESET: CUPS only"
+              helmfile destroy --selector name=cups || true
+              force_delete_ns "printing"
               ;;
             "storage-only")
               echo "💥 FULL RESET: Longhorn storage only (PVCs/PVs)"

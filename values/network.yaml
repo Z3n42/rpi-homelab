@@ -5,11 +5,13 @@ network:
   metallb:
     range: "192.168.1.60-192.168.1.80"
   services:
+    traefik:
+      ip: "192.168.1.50"
     pihole:
       primary_ip: "192.168.1.53"
       backup_ip: "192.168.1.54"
       web_ip: "192.168.1.52"
     homebridge:
       ip: "192.168.1.55"
-    traefik:
-      ip: "192.168.1.50"
+    cups:
+      ip: "192.168.1.56"

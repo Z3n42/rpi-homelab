@@ -13,6 +13,8 @@ on:
           - 'pihole'
           - 'homebridge'
           - 'tailscale'
+          - 'cups' 
+          - 'ingresses'
           - 'networking-only'
 
 jobs:

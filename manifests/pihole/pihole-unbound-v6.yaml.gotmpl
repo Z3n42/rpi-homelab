@@ -26,6 +26,7 @@ resources:
           prefer-ip6: no
           access-control: 127.0.0.0/8 allow
           access-control: 10.0.0.0/8 allow
+          access-control: 192.168.1.0/24 allow
           harden-glue: yes
           harden-dnssec-stripped: yes
           use-caps-for-id: no
@@ -34,6 +35,10 @@ resources:
           num-threads: 1
           so-rcvbuf: 1m
           so-sndbuf: 1m
+          private-domain: "local"
+          private-domain: "lan"
+          domain-insecure: "local"
+          domain-insecure: "lan"
           private-address: 10.0.0.0/8
           private-address: 172.16.0.0/12
           private-address: 192.168.0.0/16

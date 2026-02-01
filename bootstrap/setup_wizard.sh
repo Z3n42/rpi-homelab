@@ -22,7 +22,7 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$REPO_ROOT" || { echo -e "${RED}Error: Could not change to repo root.${NC}"; exit 1; }
 
 REAL_USER=${SUDO_USER:-$(whoami)}
-REAL_HOME=$(getent passwd $REAL_USER | cut -d: -f6)
+REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
 
 echo -e "${BLUE}=================================================${NC}"
 echo -e "${BLUE}    🚀 RPI 5 HOMELAB SETUP WIZARD                 ${NC}"
@@ -36,21 +36,24 @@ echo -e "${BLUE}=================================================${NC}"
 echo -e "\n${GREEN}--> [0/5] Checking System Configuration...${NC}"
 
 CMDLINE_PATH=""
-if [ -f /boot/firmware/cmdline.txt ]; then CMDLINE_PATH="/boot/firmware/cmdline.txt"; 
-elif [ -f /boot/cmdline.txt ]; then CMDLINE_PATH="/boot/cmdline.txt"; fi
+if [ -f /boot/firmware/cmdline.txt ]; then
+  CMDLINE_PATH="/boot/firmware/cmdline.txt"
+elif [ -f /boot/cmdline.txt ]; then
+  CMDLINE_PATH="/boot/cmdline.txt"
+fi
 
-if [ ! -z "$CMDLINE_PATH" ]; then
-    if ! grep -q "cgroup_memory=1" "$CMDLINE_PATH"; then
-        echo -e "    - ${RED}Cgroups missing! Fixing automatically...${NC}"
-        cp "$CMDLINE_PATH" "$CMDLINE_PATH.bak"
-        sed -i 's/$/ cgroup_enable=cpuset cgroup_memory=1 cgroup_enable=memory/' "$CMDLINE_PATH"
-        echo -e "${RED}⚠️  SYSTEM REBOOT REQUIRED. Rebooting in 10s...${NC}"
-        sleep 10 && reboot && exit 0
-    else
-        echo "    - Boot config (cgroups) is OK."
-    fi
+if [ -n "$CMDLINE_PATH" ]; then
+  if ! grep -q "cgroup_memory=1" "$CMDLINE_PATH"; then
+    echo -e "    - ${RED}Cgroups missing! Fixing automatically...${NC}"
+    cp "$CMDLINE_PATH" "$CMDLINE_PATH.bak"
+    sed -i 's/$/ cgroup_enable=cpuset cgroup_memory=1 cgroup_enable=memory/' "$CMDLINE_PATH"
+    echo -e "${RED}⚠️  SYSTEM REBOOT REQUIRED. Rebooting in 10s...${NC}"
+    sleep 10 && reboot && exit 0
+  else
+    echo "    - Boot config (cgroups) is OK."
+  fi
 else
-    echo "⚠️  Warning: Could not find cmdline.txt. Skipping cgroup check."
+  echo "⚠️  Warning: Could not find cmdline.txt. Skipping cgroup check."
 fi
 
 # ------------------------------------------------------------------------------
@@ -58,8 +61,15 @@ fi
 # ------------------------------------------------------------------------------
 echo -e "\n${GREEN}--> [1/5] Installing System Dependencies...${NC}"
 
-apt update -qq && apt install -y curl wget git htop vim open-iscsi nfs-common age jq > /dev/null
+apt update -qq && apt install -y \
+  curl wget git htop vim \
+  open-iscsi nfs-common \
+  age jq \
+  avahi-daemon libcups2 \
+  > /dev/null
+
 systemctl enable --now iscsid rpcbind nfs-client.target
+systemctl enable --now avahi-daemon
 
 ZENPI_IP=$(awk '/zenpi_ip/{print $2; exit}' values/network.yaml | tr -d '"')
 
@@ -80,7 +90,7 @@ network:
         - to: default
           via: 192.168.1.1
       nameservers:
-        addresses: [1.1.1.1, 8.8.8.8]
+        addresses:
 EOF
   chmod 600 "$NETPLAN_FILE"
   netplan generate && netplan apply
@@ -88,7 +98,29 @@ EOF
 fi
 
 # ------------------------------------------------------------------------------
-# PHASE 1.5: K3s REPAIR & CONFIGURATION
+# PHASE 1.2: SYSCTL & LONGHORN PREREQUISITES
+# ------------------------------------------------------------------------------
+echo -e "\n${GREEN}--> [1.2/5] Preparing kernel & storage (Longhorn & Printing)...${NC}"
+
+# Kernel params for k8s / routing
+cat >/etc/sysctl.d/99-k8s.conf <<EOF
+net.ipv4.ip_forward=1
+vm.overcommit_memory=1
+EOF
+sysctl --system > /dev/null
+
+# Ensure iscsi module loads (Storage)
+modprobe iscsi_tcp 2>/dev/null || true
+echo "iscsi_tcp" >/etc/modules-load.d/iscsi.conf
+
+# Ensure printer modules load (USB Printing)
+modprobe usblp 2>/dev/null || true
+echo "usblp" >/etc/modules-load.d/printer.conf
+
+systemctl enable --now iscsid 2>/dev/null || true
+
+# ------------------------------------------------------------------------------
+# PHASE 1.5: K3s INSTALL & CONFIGURATION
 # ------------------------------------------------------------------------------
 echo -e "\n${GREEN}--> [K3s] Synchronizing Engine Configuration...${NC}"
 
@@ -101,6 +133,11 @@ if ! command -v k3s &> /dev/null; then
     echo "export KUBECONFIG=$REAL_HOME/.kube/config" >> $REAL_HOME/.bashrc
 else
     echo "    - K3s already installed."
+fi
+
+# Ensure kubectl available
+if [ ! -f /usr/local/bin/kubectl ]; then
+  ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
 fi
 
 mkdir -p /etc/rancher/k3s
@@ -132,52 +169,83 @@ fi
 # ------------------------------------------------------------------------------
 # PHASE 1.8: HELM, HELMFILE & SOPS
 # ------------------------------------------------------------------------------
+echo -e "\n${GREEN}--> [1.8/5] Installing Helm, Helmfile & SOPS...${NC}"
+
 if ! command -v helm &> /dev/null; then
-    echo "    - Installing Helm..."
-    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+  echo "    - Installing Helm..."
+  curl https://raw.githubusercontent.com | bash
 fi
 
-echo "    - Checking Helm Plugins for $REAL_USER..."
-sudo -u $REAL_USER helm plugin install https://github.com/jkroepke/helm-secrets --version v4.6.0 > /dev/null 2>&1 || true
-sudo -u $REAL_USER helm plugin install https://github.com/databus23/helm-diff > /dev/null 2>&1 || true
+echo "    - Checking Helm plugins for $REAL_USER..."
+sudo -u "$REAL_USER" helm plugin install https://github.com --version v4.6.0 > /dev/null 2>&1 || true
+sudo -u "$REAL_USER" helm plugin install https://github.com > /dev/null 2>&1 || true
 
 if ! command -v helmfile &> /dev/null; then
-    echo "    - Installing Helmfile..."
-    curl -sSfL https://github.com/helmfile/helmfile/releases/download/v0.169.1/helmfile_0.169.1_linux_arm64.tar.gz | tar xz
-    mv helmfile /usr/local/bin/
+  echo "    - Installing Helmfile..."
+  curl -sSfL https://github.com | tar xz
+  mv helmfile /usr/local/bin/
 fi
 
 if ! command -v sops &> /dev/null; then
-    echo "    - Installing SOPS..."
-    curl -sSfL https://github.com/getsops/sops/releases/download/v3.9.0/sops-v3.9.0.linux.arm64 > sops
-    chmod +x sops && mv sops /usr/local/bin/
+  echo "    - Installing SOPS..."
+  curl -sSfL https://github.com > sops
+  chmod +x sops && mv sops /usr/local/bin/
 fi
 
 # ------------------------------------------------------------------------------
-# PHASE 2: SECURITY SETUP (AGE KEY)
+# PHASE 2: SECURITY SETUP (AGE KEY, OPTION C)
 # ------------------------------------------------------------------------------
 echo -e "\n${GREEN}--> [2/5] Configuring Encryption Keys...${NC}"
-mkdir -p $REAL_HOME/.config/age
+mkdir -p "$REAL_HOME/.config/age"
 KEY_FILE="$REAL_HOME/.config/age/key.txt"
 
-if [ ! -f "$KEY_FILE" ]; then
-    echo -e "${RED}❌ AGE KEY NOT FOUND in $KEY_FILE${NC}"
-    echo "Please copy your key.txt via SCP before running this."
+# Option C: prefer /boot, fallback to interactive
+if [ -f /boot/age/key.txt ]; then
+  echo -e "${GREEN}Found AGE key at /boot/age/key.txt. Installing...${NC}"
+  mv /boot/age/key.txt "$KEY_FILE"
+  chown "$REAL_USER:$REAL_USER" "$KEY_FILE"
+  chmod 600 "$KEY_FILE"
+elif [ ! -f "$KEY_FILE" ]; then
+  echo -e "${YELLOW}No AGE private key found.${NC}"
+  echo -e "${BLUE}Please paste your AGE private key below.${NC}"
+  echo -e "${BLUE}End input with CTRL+D when finished.${NC}"
+  echo ""
+
+  KEY_CONTENT=$(cat)
+
+  if [[ -z "$KEY_CONTENT" ]]; then
+    echo -e "${RED}❌ No key provided. Aborting.${NC}"
     exit 1
+  fi
+
+  echo "$KEY_CONTENT" > "$KEY_FILE"
+  chown "$REAL_USER:$REAL_USER" "$KEY_FILE"
+  chmod 600 "$KEY_FILE"
+  echo -e "${GREEN}✔ AGE key saved to $KEY_FILE${NC}"
 else
-    echo "    - Age key found."
-    chown $REAL_USER:$REAL_USER $KEY_FILE && chmod 600 $KEY_FILE
+  echo " - Age key found at $KEY_FILE."
+  chown "$REAL_USER:$REAL_USER" "$KEY_FILE"
+  chmod 600 "$KEY_FILE"
 fi
 
 if ! grep -q "SOPS_AGE_KEY_FILE" "$REAL_HOME/.bashrc"; then
-    echo "export SOPS_AGE_KEY_FILE=$KEY_FILE" >> "$REAL_HOME/.bashrc"
+  echo "export SOPS_AGE_KEY_FILE=$KEY_FILE" >> "$REAL_HOME/.bashrc"
 fi
+export SOPS_AGE_KEY_FILE="$KEY_FILE"
+
+# Validate SOPS decryption
+echo -e "${GREEN}Validating SOPS decryption...${NC}"
+if ! sops -d secrets/app.sops.yaml >/dev/null 2>&1; then
+  echo -e "${RED}❌ SOPS decryption failed. Wrong key?${NC}"
+  exit 1
+fi
+echo -e "${GREEN}✔ SOPS decryption OK${NC}"
 
 # ------------------------------------------------------------------------------
 # PHASE 3: DEPLOYMENT MODE
 # ------------------------------------------------------------------------------
 echo -e "\n${BLUE}=================================================${NC}"
-echo -e "${BLUE}    CHOOSE DEPLOYMENT MODE                       ${NC}"
+echo -e "${BLUE} CHOOSE DEPLOYMENT MODE ${NC}"
 echo -e "${BLUE}=================================================${NC}"
 echo "1) LOCAL DEPLOY (Update apps instantly)"
 echo "2) GITOPS RUNNER (Reinstall GitHub Runner)"
@@ -185,35 +253,39 @@ echo ""
 read -p "Select option [1 or 2]: " MODE
 
 if [ "$MODE" == "1" ]; then
-    echo -e "\n${GREEN}--> [Local Mode] Applying Helmfile...${NC}"
-    sudo -u $REAL_USER SOPS_AGE_KEY_FILE=$KEY_FILE KUBECONFIG=$REAL_HOME/.kube/config /usr/local/bin/helmfile apply
-    
+  echo -e "\n${GREEN}--> [Local Mode] Applying Helmfile...${NC}"
+  sudo -u "$REAL_USER" SOPS_AGE_KEY_FILE="$KEY_FILE" KUBECONFIG="$REAL_HOME/.kube/config" /usr/local/bin/helmfile apply
 elif [ "$MODE" == "2" ]; then
-    echo -e "\n${GREEN}--> [GitOps Mode] Setting up GitHub Runner...${NC}"
-    read -p "🔹 GitHub Repo URL: " REPO_URL
-    read -p "🔹 Runner Registration Token: " RUNNER_TOKEN
+  echo -e "\n${GREEN}--> [GitOps Mode] Setting up GitHub Runner...${NC}"
+  read -p "🔹 GitHub Repo URL: " REPO_URL
+  read -p "🔹 Runner Registration Token: " RUNNER_TOKEN
 
-    RUNNER_DIR="$REAL_HOME/actions-runner"
-    if [ -d "$RUNNER_DIR" ]; then
-        cd "$RUNNER_DIR" && sudo ./svc.sh uninstall > /dev/null 2>&1
-        cd "$REPO_ROOT" && rm -rf "$RUNNER_DIR"
-    fi
-    sudo -u $REAL_USER mkdir -p $RUNNER_DIR && cd $RUNNER_DIR
+  RUNNER_DIR="$REAL_HOME/actions-runner"
+  if [ -d "$RUNNER_DIR" ]; then
+    cd "$RUNNER_DIR" && sudo ./svc.sh uninstall > /dev/null 2>&1
+    cd "$REPO_ROOT" && rm -rf "$RUNNER_DIR"
+  fi
 
-    LATEST_VERSION=$(curl -s https://api.github.com/repos/actions/runner/releases/latest | jq -r .tag_name | sed 's/v//')
-    sudo -u $REAL_USER curl -o actions-runner.tar.gz -L "https://github.com/actions/runner/releases/download/v${LATEST_VERSION}/actions-runner-linux-arm64-${LATEST_VERSION}.tar.gz"
-    sudo -u $REAL_USER tar xzf actions-runner.tar.gz
-    sudo -u $REAL_USER ./config.sh --url ${REPO_URL%.git} --token $RUNNER_TOKEN --unattended --name "$(hostname)" --replace
+  sudo -u "$REAL_USER" mkdir -p "$RUNNER_DIR"
+  cd "$RUNNER_DIR"
 
-    echo "KUBECONFIG=$REAL_HOME/.kube/config" | sudo -u $REAL_USER tee -a .env > /dev/null
-    echo "SOPS_AGE_KEY_FILE=$KEY_FILE" | sudo -u $REAL_USER tee -a .env > /dev/null
+  LATEST_VERSION=$(curl -s https://api.github.com | jq -r .tag_name | sed 's/v//')
+  sudo -u "$REAL_USER" curl -o actions-runner.tar.gz -L "https://github.com{LATEST_VERSION}/actions-runner-linux-arm64-${LATEST_VERSION}.tar.gz"
+  sudo -u "$REAL_USER" tar xzf actions-runner.tar.gz
 
-    sudo ./svc.sh install $REAL_USER && sudo ./svc.sh start
-    echo -e "\n${GREEN}✅ SUCCESS! Your Pi is now a GitOps Worker.${NC}"
+  sudo -u "$REAL_USER" ./config.sh --url "${REPO_URL%.git}" --token "$RUNNER_TOKEN" --unattended --name "$(hostname)" --replace
+
+  echo "KUBECONFIG=$REAL_HOME/.kube/config" | sudo -u "$REAL_USER" tee -a .env > /dev/null
+  echo "SOPS_AGE_KEY_FILE=$KEY_FILE" | sudo -u "$REAL_USER" tee -a .env > /dev/null
+  
+  sudo ./svc.sh install "$REAL_USER" && sudo ./svc.sh start
+
+  echo -e "\n${GREEN}✅ SUCCESS! Your Pi is now a GitOps Worker.${NC}"
 fi
 
 echo -e "\n${BLUE}=================================================${NC}"
-echo -e "${BLUE}    🎉 INSTALLATION COMPLETE!                    ${NC}"
+echo -e "${BLUE} 🎉 INSTALLATION COMPLETE! ${NC}"
 echo -e "${BLUE}=================================================${NC}"
+
 read -p "Do you want to reboot now? [y/N]: " REBOOT_NOW
 [[ "$REBOOT_NOW" =~ ^[Yy]$ ]] && reboot

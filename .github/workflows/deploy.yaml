@@ -58,6 +58,12 @@ jobs:
               manifests/tailscale/*|values/tailscale*)
                 SERVICES+=("tailscale")
                 ;;
+              manifests/ingresses/*)
+                SERVICES+=("central-ingresses")
+                ;;
+              values/network.yaml|secrets/app.sops.yaml|manifests/cups/*)
+                SERVICES+=("cups")
+                ;;
             esac
           done
 
@@ -108,6 +114,8 @@ jobs:
                 pihole-stack) rollback_if_needed "pihole-stack" "pihole" ;;
                 homebridge)   rollback_if_needed "homebridge"   "homebridge" ;;
                 tailscale)    rollback_if_needed "tailscale"    "tailscale" ;;
+                cups)         rollback_if_needed "cups"         "printing" ;;
+                central-ingresses) rollback_if_needed "central-ingresses" "traefik-system" ;;
               esac
             done
 

@@ -4,9 +4,6 @@ metadata:
   name: traefik-dashboard
   namespace: traefik-system
 spec:
-  entryPoints:
-    - web
-    - websecure
   routes:
     - match: Host(`traefik.{{ index .Values "network" "domain" }}`)
       kind: Rule
@@ -14,4 +11,5 @@ spec:
         - name: api@internal
           kind: TraefikService
 
-  tls: {}
+  tls:
+    certResolver: le

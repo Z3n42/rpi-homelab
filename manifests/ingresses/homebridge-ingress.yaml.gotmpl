@@ -1,0 +1,15 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: homebridge-ui
+  namespace: homebridge
+spec:
+  routes:
+    - match: Host(`homebridge.{{ index .Values "network" "domain" }}`)
+      kind: Rule
+      services:
+        - name: homebridge
+          port: 8581
+
+  tls:
+    certResolver: le

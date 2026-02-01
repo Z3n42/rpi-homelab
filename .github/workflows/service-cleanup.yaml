@@ -13,6 +13,8 @@ on:
           - 'pihole'
           - 'homebridge'
           - 'tailscale'
+          - 'cups'
+          - 'ingresses'
           - 'unbound'
           - 'metallb-config'
       confirm:
@@ -65,9 +67,13 @@ jobs:
               cleanup_release "pihole-stack"
               cleanup_release "homebridge"
               cleanup_release "tailscale"
+              cleanup_release "cups"
+              cleanup_release "central-ingresses" 
               cleanup_services "pihole"
               cleanup_services "homebridge"
               cleanup_services "tailscale"
+              cleanup_services "printing"
+              cleanup_services "traefik-system"
               ;;
             "pihole")
               cleanup_release "pihole-stack"
@@ -80,6 +86,14 @@ jobs:
             "tailscale")
               cleanup_release "tailscale"
               cleanup_services "tailscale"
+              ;;
+            "cups")
+              cleanup_release "cups"
+              cleanup_services "printing"
+              ;;
+            "ingresses")
+              cleanup_release "central-ingresses"
+              cleanup_services "traefik-system" 
               ;;
             "unbound")
               cleanup_services "pihole"

@@ -77,6 +77,8 @@ releases:
     needs:
       - traefik-system/traefik-crds
       - metallb-system/metallb-config
+    secrets:
+      - secrets/app.sops.yaml
     values:
       - installationCRDs: false
       - deployment:
@@ -84,7 +86,6 @@ releases:
             redeploy-timestamp: "{{ now }}"
       - api:
           dashboard: true
-          insecure: true
       - logs:
           general:
             level: INFO
@@ -92,6 +93,11 @@ releases:
           - "--entryPoints.web.address=:8000"
           - "--entryPoints.websecure.address=:8443"
           - "--entryPoints.websecure.http.tls=true"
+          - "--certificatesResolvers.le.acme.email={{ .Values.traefik.email }}" 
+          - "--certificatesResolvers.le.acme.httpChallenge.entryPoint=web"
+          - "--certificatesResolvers.le.acme.storage=/data/acme.json"
+          - "--entryPoints.web.http.redirections.entryPoint=websecure"
+          - "--entryPoints.web.http.redirections.permanent=true"
       - ports:
           web:
             port: 8000
@@ -109,6 +115,14 @@ releases:
           spec:
             type: LoadBalancer
             loadBalancerIP: "{{ .Values.network.services.traefik.ip }}"
+      
+      - persistence:
+          data:
+            enabled: true
+            storageClass: "longhorn" 
+            size: 1Gi
+            accessMode: ReadWriteOnce
+            mountPath: /data
 
   # -----------------------------
   # PIHOLE
@@ -265,3 +279,80 @@ releases:
           - |
             echo "🚨 Emergency cleanup available"
             echo "  helmfile destroy --selector name=longhorn"
+
+
+  # -----------------------------
+  # CUPS 
+  # -----------------------------
+  - name: cups
+    namespace: printing
+    chart: bjw-s/app-template
+    createNamespace: true
+    needs:
+      - longhorn-system/longhorn
+      - metallb-system/metallb-config
+    secrets:
+      - secrets/app.sops.yaml
+    values:
+      - controllers:
+          main:
+            type: deployment
+            annotations:
+              reloader.stakater.com/auto: "true"
+            pod:
+              hostNetwork: true
+              dnsPolicy: ClusterFirstWithHostNet
+            containers:
+              main:
+                image:
+                  repository: olbat/cupsd
+                  tag: latest
+                securityContext:
+                  privileged: true
+                env:
+                  TZ: "Europe/Madrid"
+                  CUPS_ADMIN_USER: "{{ .Values.cups.user }}"
+                  CUPS_ADMIN_PASSWORD: "{{ .Values.cups.password }}"
+
+      - service:
+          main:
+            controller: main
+            type: LoadBalancer
+            annotations:
+              metallb.universe.tf/address-pool: default-pool
+              metallb.universe.tf/loadBalancerIPs: "{{ .Values.network.services.cups.ip }}"
+            ports:
+              http:
+                port: 631
+
+      - persistence:
+          config:
+            enabled: true
+            storageClass: "longhorn"
+            accessMode: ReadWriteOnce
+            size: 1Gi
+            globalMounts:
+              - path: /etc/cups
+          usb:
+            enabled: true
+            type: hostPath
+            hostPath: /dev/bus/usb
+            globalMounts:
+              - path: /dev/bus/usb
+
+  # -----------------------------
+  # INGRESSES CENTRALIZED
+  # -----------------------------
+  - name: central-ingresses
+    namespace: traefik-system
+    chart: bedag/raw
+    needs:
+      - traefik-system/traefik
+      - printing/cups
+      - homebridge/homebridge
+    values:
+      - resources:
+          - {{ tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") . | indent 12 | trim }}
+          - {{ tpl (readFile "manifests/ingresses/cups-ingress.yaml.gotmpl") . | indent 12 | trim }}
+          - {{ tpl (readFile "manifests/ingresses/homebridge-ingress.yaml.gotmpl") . | indent 12 | trim }}
+ 

@@ -15,6 +15,9 @@ on:
           - 'all'
           - 'pihole'
           - 'metallb'
+          - 'homebridge'
+          - 'tailscale'
+          - 'cups'
           - 'longhorn'
           - 'traefik'
 
@@ -116,9 +119,28 @@ jobs:
               cleanup_services "pihole"
               ;;
 
+            "homebridge")
+              echo "🧹 Cleaning Homebridge Stack..."
+              helmfile destroy --selector name=homebridge || true
+              cleanup_services "homebridge"
+              ;;
+
+            "tailscale")
+              echo "🧹 Cleaning Tailscale Stack..."
+              helmfile destroy --selector name=tailscale || true
+              cleanup_services "tailscale"
+              ;;
+
+            "cups")
+              echo "🧹 Cleaning CUPS Print Server..."
+              helmfile destroy --selector name=cups || true
+              cleanup_services "printing" 
+              ;;
+
             "traefik")
-              echo "🧹 Cleaning Traefik..."
+              echo "🧹 Cleaning Traefik and Ingresses..."
               helmfile destroy --selector name=traefik || true
+              helmfile destroy --selector name=central-ingresses || true
               force_delete_ns "traefik-system"
               ;;
 
@@ -138,7 +160,7 @@ jobs:
             "all")
               echo "💥 DESTROYING EVERYTHING..."
               helmfile destroy || true
-              for ns in pihole traefik-system metallb-system longhorn-system homebridge tailscale; do
+              for ns in pihole traefik-system metallb-system longhorn-system homebridge tailscale printing; do
                 force_delete_ns $ns
               done
               ;;
