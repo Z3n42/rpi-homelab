@@ -246,7 +246,7 @@ releases:
       - tailscale/tailscale
     values:
       - resources:
-          - '{{ tpl (readFile "manifests/tailscale/tailscale-subnet-router.yaml.gotmpl") . | indent 12 | trim }}'
+          - {{ (tpl (readFile "manifests/tailscale/tailscale-subnet-router.yaml.gotmpl") .) | fromYaml }}
 
   # -----------------------------
   # TRAEFIK RESOURCES
@@ -260,9 +260,9 @@ releases:
       - homebridge/homebridge
     values:
       - resources:
-          - '{{ tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") . | indent 12 | trim }}'
-          - '{{ tpl (readFile "manifests/ingresses/cups-ingress.yaml.gotmpl") . | indent 12 | trim }}'
-          - '{{ tpl (readFile "manifests/ingresses/homebridge-ingress.yaml.gotmpl") . | indent 12 | trim }}'
+          - {{ (tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") .) | fromYaml }}
+          - {{ (tpl (readFile "manifests/ingresses/cups-ingress.yaml.gotmpl") .) | fromYaml }}
+          - {{ (tpl (readFile "manifests/ingresses/homebridge-ingress.yaml.gotmpl") .) | fromYaml }}
 
   # -----------------------------
   # CLEANUP TOOLS
@@ -290,7 +290,7 @@ releases:
     createNamespace: false
     values:
       - resources:
-          - '{{ tpl (readFile "manifests/cups/cups-config.yaml.gotmpl") . | indent 12 | trim }}'
+          - {{ (tpl (readFile "manifests/cups/cups-config.yaml.gotmpl") .) | fromYaml }}
 
   - name: cups
     namespace: printing
