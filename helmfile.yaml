@@ -262,7 +262,7 @@ releases:
       domain-version: "{{ .Values.network.domain }}"
     values:
       - resources:
-          - {{ tpl (readFile "manifests/traefik/traefik-dashboard.yaml.gotmpl") . | fromYaml | toYaml | indent 12 | trim }}
+          - {{ tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") . | fromYaml | toYaml | indent 12 | trim }}
 
   # -----------------------------
   # CLEANUP TOOLS
