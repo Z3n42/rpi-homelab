@@ -12,6 +12,7 @@ repositories:
   - name: traefik
     url: https://traefik.github.io/charts
 
+---
 environments:
   default:
     values:
@@ -19,6 +20,7 @@ environments:
     secrets:
       - secrets/app.sops.yaml
 
+---
 releases:
 
   # -----------------------------
