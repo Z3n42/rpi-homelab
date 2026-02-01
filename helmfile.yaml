@@ -305,7 +305,7 @@ releases:
             containers:
               main:
                 image:
-                  repository: mwatz1234/cupsd
+                  repository: mwatz/cups
                   tag: latest
                 securityContext:
                   privileged: true
