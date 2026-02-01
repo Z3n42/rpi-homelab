@@ -310,16 +310,24 @@ releases:
                   - -c
                   - |
                     echo "🔧 Checking CUPS config PVC..."
-                    if [ -z "$(ls -A /config)" ]; then
+                    if [ -z "$(ls -A /config 2>/dev/null)" ]; then
                       echo "📁 PVC empty, initializing with default CUPS config"
                       cp -r /etc/cups/* /config/
                     else
                       echo "✔ PVC already initialized"
                     fi
+                    # Ensure CUPS  on all interfaces (persisted in PVC)
+                    if [ -f /config/cupsd.conf ]; then
+                      sed -i 's/^Listen localhost:631/Listen 0.0.0.0:631/' /config/cupsd.conf || true
+                    else
+                      sed -i 's/^Listen localhost:631/Listen 0.0.0.0:631/' /etc/cups/cupsd.conf || true
+                    fi
+                    # Fix permissions
+                    chown -R root:root /config || true
+                    chmod -R a+rX /config || true
 
             pod:
-              hostNetwork: true
-              dnsPolicy: ClusterFirstWithHostNet
+              dnsPolicy: ClusterFirst
 
             containers:
               main:
