@@ -246,7 +246,7 @@ releases:
       - tailscale/tailscale
     values:
       - resources:
-          - {{ (tpl (readFile "manifests/tailscale/tailscale-subnet-router.yaml.gotmpl") .) | fromYaml }}
+          - {{ tpl (readFile "manifests/tailscale/tailscale-subnet-router.yaml.gotmpl") . | indent 12 | trim }}
 
   # -----------------------------
   # TRAEFIK RESOURCES
@@ -260,10 +260,10 @@ releases:
       - homebridge/homebridge
     values:
       - resources:
-          - {{ (tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") .) | fromYaml }}
-          - {{ (tpl (readFile "manifests/ingresses/cups-ingress.yaml.gotmpl") .) | fromYaml }}
-          - {{ (tpl (readFile "manifests/ingresses/homebridge-ingress.yaml.gotmpl") .) | fromYaml }}
-
+          - {{ tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") . | indent 12 | trim }}
+          - {{ tpl (readFile "manifests/ingresses/cups-ingress.yaml.gotmpl") . | indent 12 | trim }}
+          - {{ tpl (readFile "manifests/ingresses/homebridge-ingress.yaml.gotmpl") . | indent 12 | trim }}
+ 
   # -----------------------------
   # CLEANUP TOOLS
   # -----------------------------
@@ -313,27 +313,25 @@ releases:
                     if [ -z "$(ls -A /config)" ]; then
                       echo "📁 PVC empty, initializing with default CUPS config"
                       cp -r /etc/cups/* /config/
-                      # parchea cupsd.conf en /config para escuchar en 0.0.0.0
-                      sed -i 's/^Listen localhost:631/Listen 0.0.0.0:631/' /config/cupsd.conf || true
                     else
                       echo "✔ PVC already initialized"
-                      sed -i 's/^Listen localhost:631/Listen 0.0.0.0:631/' /config/cupsd.conf || true
                     fi
 
             pod:
               hostNetwork: true
               dnsPolicy: ClusterFirstWithHostNet
-              containers:
-                - name: main
-                  image:
-                    repository: mwatz/cups
-                    tag: latest
-                  securityContext:
-                    privileged: true
-                  env:
-                    TZ: "Europe/Madrid"
-                    CUPS_ADMIN_USER: "{{ .Values.cups.user }}"
-                    CUPS_ADMIN_PASSWORD: "{{ .Values.cups.password }}"
+
+            containers:
+              main:
+                image:
+                  repository: mwatz/cups
+                  tag: latest
+                securityContext:
+                  privileged: true
+                env:
+                  TZ: "Europe/Madrid"
+                  CUPS_ADMIN_USER: "{{ .Values.cups.user }}"
+                  CUPS_ADMIN_PASSWORD: "{{ .Values.cups.password }}"
 
       - service:
           main:
