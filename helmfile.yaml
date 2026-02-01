@@ -299,27 +299,28 @@ releases:
             type: deployment
             annotations:
               reloader.stakater.com/auto: "true"
+
+            initContainers:
+              init-cups-config:
+                image: mwatz/cups:latest
+                command:
+                  - sh
+                  - -c
+                  - |
+                    echo "🔧 Checking CUPS config PVC..."
+                    if [ -z "$(ls -A /config)" ]; then
+                      echo "📁 PVC empty, initializing with default CUPS config"
+                      cp -r /etc/cups/* /config/
+                    else
+                      echo "✔ PVC already initialized"
+                    fi
+                volumeMounts:
+                  - name: config
+                    mountPath: /config
+
             pod:
               hostNetwork: true
               dnsPolicy: ClusterFirstWithHostNet
-
-              initContainers:
-                init-cups-config:
-                  image: mwatz/cups:latest
-                  command:
-                    - sh
-                    - -c
-                    - |
-                      echo "🔧 Checking CUPS config PVC..."
-                      if [ -z "$(ls -A /config)" ]; then
-                        echo "📁 PVC empty, initializing with default CUPS config"
-                        cp -r /etc/cups/* /config/
-                      else
-                        echo "✔ PVC already initialized"
-                      fi
-                  volumeMounts:
-                    - name: config
-                      mountPath: /config
 
             containers:
               main:
