@@ -290,7 +290,7 @@ releases:
     createNamespace: false
     values:
       - resources:
-          - {{ tpl (readFile "manifests/cups/cups-config.yaml.gotmpl") . | indent 12 | trim }}
+          - '{{ tpl (readFile "manifests/cups/cups-config.yaml.gotmpl") . | indent 12 | trim }}'
 
   - name: cups
     namespace: printing
