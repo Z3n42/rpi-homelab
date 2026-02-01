@@ -4,6 +4,9 @@ metadata:
   name: cups-admin-ui
   namespace: printing
 spec:
+  entryPoints:
+    - web
+    - websecure
   routes:
     - match: Host(`cups.{{ index .Values "network" "domain" }}`)
       kind: Rule
