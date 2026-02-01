@@ -334,14 +334,6 @@ releases:
                     TZ: "Europe/Madrid"
                     CUPS_ADMIN_USER: "{{ .Values.cups.user }}"
                     CUPS_ADMIN_PASSWORD: "{{ .Values.cups.password }}"
-                  volumeMounts:
-                    - name: cups-conf
-                      mountPath: /etc/cups/cupsd.conf
-                      subPath: cupsd.conf
-              volumes:
-                - name: cups-conf
-                  configMap:
-                    name: cups-config
 
       - service:
           main:
