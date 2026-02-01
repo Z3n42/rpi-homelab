@@ -284,14 +284,6 @@ releases:
   # -----------------------------
   # CUPS 
   # -----------------------------
-  - name: cups-config
-    namespace: printing
-    chart: bedag/raw
-    createNamespace: false
-    values:
-      - resources:
-          - {{ (tpl (readFile "manifests/cups/cups-config.yaml.gotmpl") .) | fromYaml }}
-
   - name: cups
     namespace: printing
     chart: bjw-s/app-template
@@ -299,7 +291,6 @@ releases:
     needs:
       - longhorn-system/longhorn
       - metallb-system/metallb-config
-      # - printing/cups-config
     secrets:
       - secrets/app.sops.yaml
     values:
