@@ -96,8 +96,6 @@ releases:
           - "--certificatesResolvers.le.acme.email={{ .Values.traefik.email }}" 
           - "--certificatesResolvers.le.acme.httpChallenge.entryPoint=web"
           - "--certificatesResolvers.le.acme.storage=/data/acme.json"
-          - "--entryPoints.web.http.redirections.entryPoint=websecure"
-          - "--entryPoints.web.http.redirections.permanent=true"
       - ports:
           web:
             port: 8000
@@ -307,7 +305,7 @@ releases:
             containers:
               main:
                 image:
-                  repository: olbat/cupsd
+                  repository: mwatz1234/cupsd
                   tag: latest
                 securityContext:
                   privileged: true
