@@ -93,9 +93,6 @@ releases:
           - "--entryPoints.web.address=:8000"
           - "--entryPoints.websecure.address=:8443"
           - "--entryPoints.websecure.http.tls=true"
-          - "--certificatesResolvers.le.acme.email={{ .Values.traefik.email }}" 
-          - "--certificatesResolvers.le.acme.httpChallenge.entryPoint=web"
-          - "--certificatesResolvers.le.acme.storage=/data/acme.json"
           - "--entryPoints.cups.address=:631"
       - ports:
           web:
