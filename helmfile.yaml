@@ -96,6 +96,7 @@ releases:
           - "--certificatesResolvers.le.acme.email={{ .Values.traefik.email }}" 
           - "--certificatesResolvers.le.acme.httpChallenge.entryPoint=web"
           - "--certificatesResolvers.le.acme.storage=/data/acme.json"
+          - "--entryPoints.cups.address=:631"
       - ports:
           web:
             port: 8000
@@ -109,10 +110,19 @@ releases:
             protocol: TCP
             expose:
               default: true
+          cups:
+            port: 631
+            protocol: TCP
+            expose:
+              default: false
+
       - service:
           spec:
             type: LoadBalancer
             loadBalancerIP: "{{ .Values.network.services.traefik.ip }}"
+          ports: 
+            cups: 
+              port: 631
       
       - persistence:
           data:
@@ -262,6 +272,7 @@ releases:
       - resources:
           - {{ tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") . | indent 12 | trim }}
           - {{ tpl (readFile "manifests/ingresses/cups-ingress.yaml.gotmpl") . | indent 12 | trim }}
+          - {{ tpl (readFile "manifests/ingresses/cups-ingress-tcp.yaml.gotmpl") . | indent 12 | trim }}
           - {{ tpl (readFile "manifests/ingresses/homebridge-ingress.yaml.gotmpl") . | indent 12 | trim }}
  
   # -----------------------------
