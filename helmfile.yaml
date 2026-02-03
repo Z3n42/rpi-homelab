@@ -318,15 +318,20 @@ releases:
                   - -c
                   - |
                     echo "🔧 init: prepare /config and force Listen 0.0.0.0"
+                    
                     if [ -z "$(ls -A /config 2>/dev/null)" ]; then
                       cp -a /etc/cups/* /config/ 2>/dev/null || true
                     fi
+                    
                     if [ -f /config/cupsd.conf ]; then
-                      sed -i 's/^Listen[[:space:]]*localhost:631/Listen 0.0.0.0:631/; s/^Listen[[:space:]]*127.0.0.1:631/Listen 0.0.0.0:631/' /config/cupsd.conf || true
-
-                      # Reemplazo multilínea robusto con perl: permitir solo la LAN (ajusta la subred si hace falta)
+                      sed -i 's/^Listen[[:space:]]*localhost:631/Listen 0.0.0.0:631/' /config/cupsd.conf || true
+                      sed -i 's/^Listen[[:space:]]*127.0.0.1:631/Listen 0.0.0.0:631/' /config/cupsd.conf || true
+                      grep -q "ServerAlias \*" /config/cupsd.conf || echo "ServerAlias *" >> /config/cupsd.conf
+                      sed -i 's/DefaultEncryption Required/DefaultEncryption Never/' /config/cupsd.conf || true
+                      sed -i 's/DefaultEncryption IfRequested/DefaultEncryption Never/' /config/cupsd.conf || true
                       perl -0777 -pe "s#<Location />.*?</Location>#<Location />\n  Order allow,deny\n  Allow from 192.168.1.0/24\n</Location>#s" -i /config/cupsd.conf || true
                       perl -0777 -pe "s#<Location /admin>.*?</Location>#<Location /admin>\n  Order allow,deny\n  Allow from 192.168.1.0/24\n</Location>#s" -i /config/cupsd.conf || true
+                      sed -i 's/WebInterface No/WebInterface Yes/' /config/cupsd.conf || true
                     fi
                     chown -R root:root /config || true
                     chmod -R a+rX /config || true

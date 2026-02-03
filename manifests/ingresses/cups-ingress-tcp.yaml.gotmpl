@@ -7,7 +7,7 @@ spec:
   entryPoints:
     - cups
   routes:
-    - match: HostSNI(`*`)
+    - match: HostSNI(`cups.{{ .Values.network.domain }}`)
       services:
         - name: cups
           port: 631
