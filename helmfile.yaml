@@ -357,6 +357,7 @@ releases:
           main:
             controller: main
             type: LoadBalancer
+            externalTrafficPolicy: Local
             annotations:
               metallb.universe.tf/address-pool: pihole-pool
               metallb.universe.tf/loadBalancerIPs: "{{ .Values.network.services.cups.ip }}"
