@@ -352,6 +352,7 @@ releases:
                   TZ: "Europe/Madrid"
                   CUPS_ADMIN_USER: "{{ .Values.cups.user }}"
                   CUPS_ADMIN_PASSWORD: "{{ .Values.cups.password }}"
+                  CUPS_SERVER_NAME: "{{ .Values.network.services.cups.ip }}"
 
       - service:
           main:
