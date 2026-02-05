@@ -371,17 +371,6 @@ releases:
                     cp /tmp/cupsd.conf /config/cupsd.conf
                     echo "✅ Config copied to /config"
                     ls -la /config/
-                volumeMounts:
-                  - name: cups
-                    mountPath: /config
-                  - name: config-template
-                    mountPath: /tmp/cupsd.conf
-                    subPath: cupsd.conf
-                    readOnly: true
-                  - name: drivers
-                    mountPath: /drivers
-                  - name: usb
-                    mountPath: /dev/bus/usb
               install-hp-drivers:
                 image:
                   repository: busybox
@@ -392,16 +381,8 @@ releases:
                   - |
                     echo "🔧 init: Downloading HP LaserJet P1005 firmware"
                     mkdir -p /drivers/firmware
-                    # try to download firmware; ignore failures
                     wget -q -O /drivers/firmware/sihp1005.dl http://foo2zjs.rkkda.com/firmware/sihp1005.dl || true
                     ls -la /drivers/firmware || true
-                volumeMounts:
-                  - name: drivers
-                    mountPath: /drivers
-                  - name: usb
-                    mountPath: /dev/bus/usb
-                  - name: cups
-                    mountPath: /config
             pod:
               dnsPolicy: ClusterFirst
             containers:
@@ -422,20 +403,11 @@ releases:
                         - sh
                         - -c
                         - |
-                          # Copy firmware from initContainer emptyDir into expected location
                           mkdir -p /usr/share/foo2zjs/firmware 2>/dev/null || true
                           if [ -d /drivers/firmware ]; then
                             cp -a /drivers/firmware/* /usr/share/foo2zjs/firmware/ 2>/dev/null || true
                           fi
-                          # Ensure permissions for USB device nodes (best-effort)
                           chmod a+rw /dev/bus/usb/*/* 2>/dev/null || true
-                volumeMounts:
-                  - name: drivers
-                    mountPath: /drivers
-                  - name: usb
-                    mountPath: /dev/bus/usb
-                  - name: cups
-                    mountPath: /config
       - service:
           main:
             controller: main
@@ -453,27 +425,5 @@ releases:
             name: cups-config
             advancedMounts:
               main:
-                init-cups-config:
-                  - path: /tmp/cupsd.conf
-                    subPath: cupsd.conf
-                    readOnly: true
-          drivers:
-            enabled: true
-            type: emptyDir
-            globalMounts:
-              - path: /drivers
-          cups:
-            enabled: true
-            storageClass: "longhorn"
-            accessMode: ReadWriteOnce
-            size: 1Gi
-            globalMounts:
-              - path: /config
-              - path: /etc/cups
-          usb:
-            enabled: true
-            type: hostPath
-            hostPath: /dev/bus/usb
-            globalMounts:
-              - path: /dev/bus/usb
-              
+                init
+                
