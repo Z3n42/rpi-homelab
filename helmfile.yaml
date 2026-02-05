@@ -301,8 +301,6 @@ releases:
       - metallb-system/metallb-config
     secrets:
       - secrets/app.sops.yaml
-    manifests:
-      - manifests/cups/cups-config.yaml.gotmpl
     values:
       - controllers:
           main:
