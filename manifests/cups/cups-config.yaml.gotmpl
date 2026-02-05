@@ -5,6 +5,4 @@ metadata:
   namespace: printing
 data:
   cupsd.conf: |
-    {{- with (readFile "manifests/cups/cupsd.conf") | indent 2 }}
-    {{ . }}
-    {{- end }}
+    {{ readFile "manifests/cups/cupsd.conf" | indent 4 }}

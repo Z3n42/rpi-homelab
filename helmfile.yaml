@@ -289,6 +289,24 @@ releases:
             echo "  helmfile destroy --selector name=longhorn"
 
 
+# -----------------------------
+  # CUPS ConfigMap
+  # -----------------------------
+  - name: cups-config
+    namespace: printing
+    chart: raw
+    createNamespace: true
+    values:
+      - resources:
+          - apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: cups-config
+              namespace: printing
+            data:
+              cupsd.conf: |
+                {{ readFile "manifests/cups/cupsd.conf" | indent 16 }}
+
   # -----------------------------
   # CUPS 
   # -----------------------------
@@ -297,6 +315,7 @@ releases:
     chart: bjw-s/app-template
     createNamespace: true
     needs:
+      - printing/cups-config
       - longhorn-system/longhorn
       - metallb-system/metallb-config
     secrets:
@@ -307,39 +326,25 @@ releases:
             type: deployment
             annotations:
               reloader.stakater.com/auto: "true"
-
             initContainers:
               init-cups-config:
                 image:
-                  repository: mwatz/cups
+                  repository: busybox
                   tag: latest
                 command:
                   - sh
                   - -c
                   - |
-                    echo "🔧 init: prepare /config"
-                    
+                    echo "🔧 init: Copying base CUPS config"
                     if [ -z "$(ls -A /config 2>/dev/null)" ]; then
-                      cp -a /etc/cups/* /config/ 2>/dev/null || true
+                      mkdir -p /config
+                      cp /tmp/cupsd.conf /config/cupsd.conf
+                      echo "✅ Config copied"
+                    else
+                      echo "ℹ️  Config already exists"
                     fi
-                    
-                    if [ -f /config/cupsd.conf ]; then
-                      sed -i 's/^Listen localhost:631/Listen 0.0.0.0:631/' /config/cupsd.conf || true
-                      sed -i 's/^Listen 127.0.0.1:631/Listen 0.0.0.0:631/' /config/cupsd.conf || true
-                      sed -i 's/Order allow,deny/Order allow,deny\n  Allow all/' /config/cupsd.conf || true
-                      sed -i 's/Order deny,allow/Order allow,deny\n  Allow all/' /config/cupsd.conf || true
-                      grep -q "ServerAlias \*" /config/cupsd.conf || echo "ServerAlias *" >> /config/cupsd.conf
-                      sed -i 's/DefaultEncryption Required/DefaultEncryption Never/' /config/cupsd.conf || true
-                      sed -i 's/DefaultEncryption IfRequested/DefaultEncryption Never/' /config/cupsd.conf || true
-                      sed -i 's/WebInterface No/WebInterface Yes/' /config/cupsd.conf || true
-                    fi
-                    
-                    chown -R root:root /config || true
-                    chmod -R a+rX /config || true
-
             pod:
               dnsPolicy: ClusterFirst
-
             containers:
               main:
                 image:
@@ -351,21 +356,27 @@ releases:
                   TZ: "Europe/Madrid"
                   CUPS_ADMIN_USER: "{{ .Values.cups.user }}"
                   CUPS_ADMIN_PASSWORD: "{{ .Values.cups.password }}"
-                  CUPS_SERVER_NAME: "{{ .Values.network.services.cups.ip }}"
-
       - service:
           main:
             controller: main
             type: LoadBalancer
-            externalTrafficPolicy: Local
             annotations:
               metallb.universe.tf/address-pool: pihole-pool
               metallb.universe.tf/loadBalancerIPs: "{{ .Values.network.services.cups.ip }}"
             ports:
               http:
                 port: 631
-
       - persistence:
+          config-template:
+            enabled: true
+            type: configMap
+            name: cups-config
+            advancedMounts:
+              main:
+                init-cups-config:
+                  - path: /tmp/cupsd.conf
+                    subPath: cupsd.conf
+                    readOnly: true
           cups:
             enabled: true
             storageClass: "longhorn"
@@ -380,4 +391,3 @@ releases:
             hostPath: /dev/bus/usb
             globalMounts:
               - path: /dev/bus/usb
-
