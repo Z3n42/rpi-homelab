@@ -290,6 +290,53 @@ releases:
 
 
   # -----------------------------
+  # CUPS ConfigMap
+  # -----------------------------
+  - name: cups-config
+    namespace: printing
+    chart: dysnix/raw
+    version: 0.3.2
+    createNamespace: true
+    values:
+      - resources:
+          - apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: cups-config
+              namespace: printing
+            data:
+              cupsd.conf: |-
+                Listen 0.0.0.0:631
+                ServerAlias *
+                WebInterface Yes
+                LogLevel warn
+                MaxLogSize 0
+                
+                DefaultAuthType Basic
+                DefaultEncryption Never
+                
+                <Location />
+                  Order allow,deny
+                  Allow from all
+                </Location>
+                
+                <Location /admin>
+                  Order allow,deny
+                  Allow from all
+                </Location>
+                
+                <Location /admin/conf>
+                  AuthType Default
+                  Require user @SYSTEM
+                  Order allow,deny
+                  Allow from all
+                </Location>
+                
+                Browsing On
+                BrowseLocalProtocols dnssd
+                DefaultShared Yes
+
+  # -----------------------------
   # CUPS 
   # -----------------------------
   - name: cups
@@ -297,6 +344,7 @@ releases:
     chart: bjw-s/app-template
     createNamespace: true
     needs:
+      - printing/cups-config
       - longhorn-system/longhorn
       - metallb-system/metallb-config
     secrets:
@@ -316,14 +364,11 @@ releases:
                   - sh
                   - -c
                   - |
-                    echo "🔧 init: Copying base CUPS config"
-                    if [ -z "$(ls -A /config 2>/dev/null)" ]; then
-                      mkdir -p /config
-                      cp /tmp/cupsd.conf /config/cupsd.conf
-                      echo "✅ Config copied"
-                    else
-                      echo "ℹ️  Config already exists"
-                    fi
+                    echo "🔧 init: Copying CUPS config from ConfigMap"
+                    mkdir -p /config
+                    cp /tmp/cupsd.conf /config/cupsd.conf
+                    echo "✅ Config copied to /config"
+                    ls -la /config/
             pod:
               dnsPolicy: ClusterFirst
             containers:
