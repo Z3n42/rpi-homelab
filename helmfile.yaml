@@ -371,6 +371,24 @@ releases:
                     cp /tmp/cupsd.conf /config/cupsd.conf
                     echo "✅ Config copied to /config"
                     ls -la /config/
+              install-hp-drivers:
+                image:
+                  repository: mwatz/cups
+                  tag: latest
+                command:
+                  - sh
+                  - -c
+                  - |
+                    echo "🖨️ Installing HP LaserJet drivers..."
+                    apk add --no-cache hplip
+                    
+                    # Descarga firmware para HP LaserJet P1005
+                    mkdir -p /drivers/firmware
+                    cd /drivers/firmware
+                    wget -q http://foo2zjs.rkkda.com/firmware/sihp1005.dl || true
+                    
+                    echo "✅ HP drivers installed"
+                    ls -la /drivers/firmware/
             pod:
               dnsPolicy: ClusterFirst
             containers:
@@ -384,6 +402,22 @@ releases:
                   TZ: "Europe/Madrid"
                   CUPS_ADMIN_USER: "{{ .Values.cups.user }}"
                   CUPS_ADMIN_PASSWORD: "{{ .Values.cups.password }}"
+                command:
+                  - sh
+                  - -c
+                  - |
+                    # Instalar drivers al inicio
+                    if [ ! -f /usr/share/foo2zjs/firmware/sihp1005.dl ]; then
+                      echo "Installing HP drivers in main container..."
+                      apk add --no-cache hplip
+                      mkdir -p /usr/share/foo2zjs/firmware/
+                      if [ -f /drivers/firmware/sihp1005.dl ]; then
+                        cp /drivers/firmware/sihp1005.dl /usr/share/foo2zjs/firmware/
+                      fi
+                    fi
+                    
+                    # Iniciar CUPS
+                    exec /start-cups.sh
       - service:
           main:
             controller: main
@@ -405,6 +439,11 @@ releases:
                   - path: /tmp/cupsd.conf
                     subPath: cupsd.conf
                     readOnly: true
+          drivers:
+            enabled: true
+            type: emptyDir
+            globalMounts:
+              - path: /drivers
           cups:
             enabled: true
             storageClass: "longhorn"
