@@ -291,19 +291,21 @@ releases:
             echo "  helmfile destroy --selector name=longhorn"
 
 
-# -----------------------------
+  # -----------------------------
   # CUPS ConfigMap
   # -----------------------------
   - name: cups-config
     namespace: printing
     chart: dysnix/raw
     version: 0.3.2
+    createNamespace: true
     values:
       - resources:
           - apiVersion: v1
             kind: ConfigMap
             metadata:
               name: cups-config
+              namespace: printing
             data:
               cupsd.conf: |-
                 Listen 0.0.0.0:631
@@ -311,6 +313,7 @@ releases:
                 WebInterface Yes
                 LogLevel warn
                 MaxLogSize 0
+                
                 DefaultAuthType Basic
                 DefaultEncryption Never
                 
@@ -366,9 +369,8 @@ releases:
                     echo "🔧 init: Copying CUPS config from ConfigMap"
                     mkdir -p /config
                     cp /tmp/cupsd.conf /config/cupsd.conf
-                    chown root:root /config/cupsd.conf
-                    chmod 644 /config/cupsd.conf
-                    echo "✅ Config ready with strict permissions"
+                    echo "✅ Config copied to /config"
+                    ls -la /config/
             pod:
               dnsPolicy: ClusterFirst
             containers:
@@ -382,26 +384,6 @@ releases:
                   TZ: "Europe/Madrid"
                   CUPS_ADMIN_USER: "{{ .Values.cups.user }}"
                   CUPS_ADMIN_PASSWORD: "{{ .Values.cups.password }}"
-                command:
-                  - sh
-                  - -c
-                  - |
-                    echo "🛠️ Instalando drivers HP..."
-                    apt-get update && apt-get install -y hplip printer-driver-foo2zjs wget usbutils
-                    
-                    echo "📥 Descargando Firmware P1005..."
-                    mkdir -p /usr/share/foo2zjs/firmware/
-                    wget -qO /usr/share/foo2zjs/firmware/sihp1005.dl http://foo2zjs.rkkda.com/firmware/sihp1005.dl
-                    
-                    echo "🚀 Cargando firmware en la impresora..."
-                    # Busca el ID de HP y le inyecta el firmware directamente al bus USB
-                    DEVICE=$(lsusb | grep "03f0:3d17" | awk '{print "/dev/bus/usb/"$2"/"$4}' | sed 's/://')
-                    if [ -n "$DEVICE" ]; then
-                      cat /usr/share/foo2zjs/firmware/sihp1005.dl > "$DEVICE" || true
-                    fi
-                    
-                    exec /start-cups.sh
-
       - service:
           main:
             controller: main
@@ -437,9 +419,3 @@ releases:
             hostPath: /dev/bus/usb
             globalMounts:
               - path: /dev/bus/usb
-          dev-usb-lp:
-            enabled: true
-            type: hostPath
-            hostPath: /dev/usb
-            globalMounts:
-              - path: /dev/usb
