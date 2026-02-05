@@ -289,24 +289,6 @@ releases:
             echo "  helmfile destroy --selector name=longhorn"
 
 
-# -----------------------------
-  # CUPS ConfigMap
-  # -----------------------------
-  - name: cups-config
-    namespace: printing
-    chart: raw
-    createNamespace: true
-    values:
-      - resources:
-          - apiVersion: v1
-            kind: ConfigMap
-            metadata:
-              name: cups-config
-              namespace: printing
-            data:
-              cupsd.conf: |
-                {{ readFile "manifests/cups/cupsd.conf" | indent 16 }}
-
   # -----------------------------
   # CUPS 
   # -----------------------------
@@ -315,11 +297,12 @@ releases:
     chart: bjw-s/app-template
     createNamespace: true
     needs:
-      - printing/cups-config
       - longhorn-system/longhorn
       - metallb-system/metallb-config
     secrets:
       - secrets/app.sops.yaml
+    manifests:
+      - manifests/cups/cups-config.yaml.gotmpl
     values:
       - controllers:
           main:
