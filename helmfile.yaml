@@ -366,8 +366,9 @@ releases:
                     echo "🔧 init: Copying CUPS config from ConfigMap"
                     mkdir -p /config
                     cp /tmp/cupsd.conf /config/cupsd.conf
-                    echo "✅ Config copied to /config"
-                    ls -la /config/
+                    chown root:root /config/cupsd.conf
+                    chmod 644 /config/cupsd.conf
+                    echo "✅ Config ready with strict permissions"
             pod:
               dnsPolicy: ClusterFirst
             containers:
