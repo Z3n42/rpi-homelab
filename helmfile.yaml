@@ -7,6 +7,8 @@ repositories:
     url: https://pkgs.tailscale.com/helmcharts
   - name: bjw-s
     url: https://bjw-s-labs.github.io/helm-charts/
+  - name: dysnix
+    url: https://dysnix.github.io/charts/
   - name: bedag
     url: https://bedag.github.io/helm-charts
   - name: traefik
