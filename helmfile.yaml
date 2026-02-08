@@ -501,6 +501,7 @@ releases:
                   <service>
                     <type>_ipp._tcp</type>
                     <subtype>_universal._sub._ipp._tcp</subtype>
+                    <subtype>_print._sub._ipp._tcp</subtype>
                     <port>631</port>
                     <txt-record>txtver=1</txt-record>
                     <txt-record>qtotal=1</txt-record>
@@ -511,9 +512,9 @@ releases:
                     <txt-record>priority=50</txt-record>
                     <txt-record>product=(GPL Ghostscript)</txt-record>
                     <txt-record>pdl=application/pdf,application/postscript,application/vnd.cups-postscript,image/jpeg,image/png,image/pwg-raster</txt-record>
-                    <txt-record>URF=none</txt-record>
+                    <txt-record>URF=W8,SRGB24,CP1,RS600</txt-record>
                     <txt-record>printer-state=3</txt-record>
-                    <txt-record>printer-type=0x809046</txt-record>
+                    <txt-record>printer-type=0x901046</txt-record>
                     <txt-record>Transparent=T</txt-record>
                     <txt-record>Binary=T</txt-record>
                     <txt-record>Fax=F</txt-record>
