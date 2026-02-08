@@ -508,9 +508,25 @@ releases:
                     <txt-record>ty=HP LaserJet P1005 Foomatic/foo2xqx</txt-record>
                     <txt-record>adminurl=http://{{ .Values.network.services.cups.ip }}:631/</txt-record>
                     <txt-record>note=HP LaserJet P1005</txt-record>
+                    <txt-record>priority=50</txt-record>
+                    <txt-record>product=(GPL Ghostscript)</txt-record>
+                    <txt-record>pdl=application/pdf,application/postscript,application/vnd.cups-postscript,image/jpeg,image/png,image/pwg-raster</txt-record>
+                    <txt-record>URF=none</txt-record>
                     <txt-record>printer-state=3</txt-record>
-                    <txt-record>printer-type=0x801046</txt-record>
-                    <txt-record>pdl=application/pdf,application/postscript,image/jpeg</txt-record>
+                    <txt-record>printer-type=0x809046</txt-record>
+                    <txt-record>Transparent=T</txt-record>
+                    <txt-record>Binary=T</txt-record>
+                    <txt-record>Fax=F</txt-record>
+                    <txt-record>Color=F</txt-record>
+                    <txt-record>Duplex=F</txt-record>
+                    <txt-record>Staple=F</txt-record>
+                    <txt-record>Copies=T</txt-record>
+                    <txt-record>Collate=F</txt-record>
+                    <txt-record>Punch=F</txt-record>
+                    <txt-record>Bind=F</txt-record>
+                    <txt-record>Sort=T</txt-record>
+                    <txt-record>Scan=F</txt-record>
+                    <txt-record>PaperMax=legal-A4</txt-record>
                   </service>
                 </service-group>
 

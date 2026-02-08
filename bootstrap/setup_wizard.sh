@@ -65,11 +65,10 @@ apt update -qq && apt install -y \
   curl wget git htop vim \
   open-iscsi nfs-common \
   age jq \
-  avahi-daemon libcups2 \
+  libcups2 \
   > /dev/null
 
 systemctl enable --now iscsid rpcbind nfs-client.target
-systemctl enable --now avahi-daemon
 
 ZENPI_IP=$(awk '/zenpi_ip/{print $2; exit}' values/network.yaml | tr -d '"')
 
