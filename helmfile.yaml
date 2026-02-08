@@ -371,6 +371,29 @@ releases:
                     cp /tmp/cupsd.conf /config/cupsd.conf
                     echo "✅ Config copied to /config"
                     ls -la /config/
+              init-cups-user:
+                image:
+                  repository: mwatz/cups
+                  tag: latest
+                command:
+                  - sh
+                  - -c
+                  - |
+                    echo "👤 init: Creating CUPS admin user"
+                    
+                    if ! id admin > /dev/null 2>&1; then
+                      adduser --disabled-password admin
+                      echo "admin:{{ .Values.cups.password }}" | chpasswd
+                      echo "✅ User admin created"
+                    else
+                      echo "ℹ️  User admin already exists"
+                    fi
+                    
+                    addgroup lpadmin 2>/dev/null || echo "ℹ️  Group lpadmin already exists"
+                    adduser admin lpadmin 2>/dev/null || echo "ℹ️  User admin already in lpadmin"
+                    
+                    id admin
+                    echo "✅ CUPS admin user configured"
             pod:
               dnsPolicy: ClusterFirst
             containers:
