@@ -381,7 +381,7 @@ releases:
                   - |
                     echo "👤 init: Creating CUPS admin user"
                     
-                    if ! id admin > /dev/null 2>&1; then
+                    if ! grep -q "^admin:" /etc/passwd; then
                       adduser --disabled-password admin
                       echo "admin:{{ .Values.cups.password }}" | chpasswd
                       echo "✅ User admin created"
@@ -392,6 +392,12 @@ releases:
                     addgroup lpadmin 2>/dev/null || echo "ℹ️  Group lpadmin already exists"
                     adduser admin lpadmin 2>/dev/null || echo "ℹ️  User admin already in lpadmin"
                     
+                    echo "📋 Copying user files to shared volume..."
+                    cp /etc/passwd /shared-etc/passwd
+                    cp /etc/shadow /shared-etc/shadow
+                    cp /etc/group /shared-etc/group
+                    
+                    # Verificar
                     id admin
                     echo "✅ CUPS admin user configured"
             pod:
@@ -407,6 +413,22 @@ releases:
                   TZ: "Europe/Madrid"
                   CUPS_ADMIN_USER: "{{ .Values.cups.user }}"
                   CUPS_ADMIN_PASSWORD: "{{ .Values.cups.password }}"
+                command:
+                  - sh
+                  - -c
+                  - |
+                    echo "🔄 Restoring user files from shared volume..."
+                    
+                    if [ -f /shared-etc/passwd ]; then
+                      cp /shared-etc/passwd /etc/passwd
+                      cp /shared-etc/shadow /etc/shadow
+                      cp /shared-etc/group /etc/group
+                      echo "✅ User files restored"
+                      id admin || echo "⚠️  User admin not found"
+                    fi
+                    
+                    echo "✅ Starting CUPS..."
+                    exec cupsd -f
       - service:
           main:
             controller: main
@@ -428,6 +450,11 @@ releases:
                   - path: /tmp/cupsd.conf
                     subPath: cupsd.conf
                     readOnly: true
+          shared-etc:
+            enabled: true
+            type: emptyDir
+            globalMounts:
+              - path: /shared-etc
           cups:
             enabled: true
             storageClass: "longhorn"
