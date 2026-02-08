@@ -452,8 +452,19 @@ releases:
                   - sh
                   - -c
                   - |
-                    echo "🔧 Installing Avahi for AirPrint..."
+                    echo "🔧 Installing Avahi and D-Bus for AirPrint..."
                     apk add --no-cache avahi avahi-tools dbus python3 py3-lxml wget
+                    
+                    echo "🔧 Configuring D-Bus..."
+                    mkdir -p /var/run/dbus
+                    dbus-uuidgen > /var/lib/dbus/machine-id
+                    dbus-daemon --system --fork
+                    
+                    if ! pgrep -x dbus-daemon > /dev/null; then
+                      echo "❌ D-Bus failed to start"
+                      exit 1
+                    fi
+                    echo "✅ D-Bus started successfully"
                     
                     echo "🔧 Configuring Avahi..."
                     cat > /etc/avahi/avahi-daemon.conf <<EOF
@@ -461,7 +472,7 @@ releases:
                     use-ipv4=yes
                     use-ipv6=no
                     allow-interfaces=eth0
-                    enable-dbus=no
+                    enable-dbus=yes
                     
                     [publish]
                     publish-addresses=yes
@@ -476,17 +487,22 @@ releases:
                     mkdir -p /etc/avahi/services
                     
                     echo "📡 Waiting for CUPS to be ready..."
-                    sleep 15
+                    for i in $(seq 1 30); do
+                      if wget -q --spider http://localhost:631 2>/dev/null; then
+                        echo "✅ CUPS is ready"
+                        break
+                      fi
+                      echo "⏳ Waiting for CUPS... ($i/30)"
+                      sleep 1
+                    done
                     
                     echo "📡 Generating AirPrint service files..."
                     wget -q https://raw.githubusercontent.com/tjfontaine/airprint-generate/master/airprint-generate.py -O /tmp/airprint-generate.py
                     chmod +x /tmp/airprint-generate.py
                     
-                    python3 /tmp/airprint-generate.py -H 192.168.1.51 -d /etc/avahi/services || true
-                    
-                    if [ ! -f /etc/avahi/services/AirPrint-*.service ]; then
+                    python3 /tmp/airprint-generate.py -H 192.168.1.51 -d /etc/avahi/services 2>/dev/null || {
                       echo "⚠️  Auto-generation failed, creating manual service file..."
-                      cat > /etc/avahi/services/AirPrint-HP_LaserJet_P1005.service <<EOF
+                      cat > /etc/avahi/services/AirPrint-HP_LaserJet_P1005.service <<'EOFSERVICE'
                     <?xml version="1.0" standalone='no'?>
                     <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
                     <service-group>
@@ -510,14 +526,11 @@ releases:
                         <txt-record>pdl=application/octet-stream,application/pdf,application/postscript,image/jpeg,image/png,image/urf</txt-record>
                       </service>
                     </service-group>
-                    EOF
-                    fi
+                    EOFSERVICE
+                    }
                     
                     echo "✅ AirPrint service files created"
                     ls -la /etc/avahi/services/
-                    
-                    mkdir -p /var/run/dbus
-                    dbus-daemon --system --fork || true
                     
                     echo "✅ Starting Avahi daemon for AirPrint discovery..."
                     exec avahi-daemon --no-drop-root --no-chroot --debug
