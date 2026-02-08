@@ -478,6 +478,43 @@ releases:
               - path: /dev/bus/usb
 
   # -----------------------------
+  # CUPS Avahi Service ConfigMap
+  # -----------------------------
+  - name: cups-avahi-service
+    namespace: printing
+    chart: dysnix/raw
+    version: 0.3.2
+    createNamespace: true
+    values:
+      - resources:
+          - apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: cups-avahi-service
+              namespace: printing
+            data:
+              AirPrint-HP_LaserJet_P1005.service: |-
+                <?xml version="1.0" standalone='no'?>
+                <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+                <service-group>
+                  <name replace-wildcards="yes">HP LaserJet P1005</name>
+                  <service>
+                    <type>_ipp._tcp</type>
+                    <subtype>_universal._sub._ipp._tcp</subtype>
+                    <port>631</port>
+                    <txt-record>txtver=1</txt-record>
+                    <txt-record>qtotal=1</txt-record>
+                    <txt-record>rp=printers/HP_LaserJet_P1005</txt-record>
+                    <txt-record>ty=HP LaserJet P1005 Foomatic/foo2xqx</txt-record>
+                    <txt-record>adminurl=http://{{ .Values.network.services.cups.ip }}:631/</txt-record>
+                    <txt-record>note=HP LaserJet P1005</txt-record>
+                    <txt-record>printer-state=3</txt-record>
+                    <txt-record>printer-type=0x801046</txt-record>
+                    <txt-record>pdl=application/pdf,application/postscript,image/jpeg</txt-record>
+                  </service>
+                </service-group>
+
+  # -----------------------------
   # CUPS Avahi mDNS Publisher
   # -----------------------------
   - name: cups-avahi
@@ -486,6 +523,7 @@ releases:
     createNamespace: true
     needs:
       - printing/cups
+      - printing/cups-avahi-service
     secrets:
       - secrets/app.sops.yaml
     values:
@@ -515,7 +553,7 @@ releases:
                   - -c
                   - |
                     echo "🔧 Installing Avahi and D-Bus..."
-                    apk add --no-cache avahi avahi-tools dbus python3 wget curl jq
+                    apk add --no-cache avahi avahi-tools dbus
                     
                     echo "🔧 Configuring D-Bus..."
                     mkdir -p /var/run/dbus /var/lib/dbus
@@ -546,101 +584,23 @@ releases:
                     enable-reflector=no
                     EOF
                     
-                    mkdir -p /etc/avahi/services
-                    
-                    echo "📡 Waiting for CUPS service at ${CUPS_SERVICE}:631..."
-                    CUPS_READY=false
-                    for i in $(seq 1 60); do
-                      if wget -q --spider http://${CUPS_SERVICE}:631 2>/dev/null; then
-                        echo "✅ CUPS is ready"
-                        CUPS_READY=true
-                        break
-                      fi
-                      echo "⏳ Waiting for CUPS... ($i/60)"
-                      sleep 2
-                    done
-                    
-                    if [ "$CUPS_READY" = "false" ]; then
-                      echo "❌ CUPS not available after 120 seconds"
-                      exit 1
-                    fi
-                    
-                    echo "📡 Auto-detecting printers from CUPS via IPP..."
-                    
-                    PRINTER_COUNT=0
-                    
-                    if wget -qO- http://${CUPS_SERVICE}:631/printers/ 2>/dev/null | grep -o 'href="/printers/[^"]*"' | sed 's/.*\/printers\/\([^"]*\).*/\1/' > /tmp/printers.txt; then
-                      while IFS= read -r PRINTER_NAME; do
-                        if [ -n "$PRINTER_NAME" ]; then
-                          echo "📄 Found printer: $PRINTER_NAME"
-                          
-                          # Obtener información del printer
-                          SAFE_NAME=$(echo "$PRINTER_NAME" | sed 's/[^a-zA-Z0-9_-]/_/g')
-                          
-                          cat > /etc/avahi/services/AirPrint-${SAFE_NAME}.service <<EOF
-                    <?xml version="1.0" standalone='no'?>
-                    <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
-                    <service-group>
-                      <name replace-wildcards="yes">${PRINTER_NAME}</name>
-                      <service>
-                        <type>_ipp._tcp</type>
-                        <subtype>_universal._sub._ipp._tcp</subtype>
-                        <port>631</port>
-                        <txt-record>txtver=1</txt-record>
-                        <txt-record>qtotal=1</txt-record>
-                        <txt-record>rp=printers/${PRINTER_NAME}</txt-record>
-                        <txt-record>ty=${PRINTER_NAME}</txt-record>
-                        <txt-record>adminurl=http://${CUPS_IP}:631/</txt-record>
-                        <txt-record>note=${PRINTER_NAME}</txt-record>
-                        <txt-record>printer-state=3</txt-record>
-                        <txt-record>printer-type=0x801046</txt-record>
-                        <txt-record>pdl=application/pdf,application/postscript,image/jpeg</txt-record>
-                      </service>
-                    </service-group>
-                    EOF
-                          
-                          echo "✅ ${PRINTER_NAME} → AirPrint-${SAFE_NAME}.service"
-                          PRINTER_COUNT=$((PRINTER_COUNT + 1))
-                        fi
-                      done < /tmp/printers.txt
-                    fi
-                    
-                    if [ "$PRINTER_COUNT" -eq 0 ]; then
-                      echo "⚠️  No printers detected, creating generic fallback service..."
-                      cat > /etc/avahi/services/AirPrint-Generic.service <<EOF
-                    <?xml version="1.0" standalone='no'?>
-                    <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
-                    <service-group>
-                      <name replace-wildcards="yes">CUPS Printer</name>
-                      <service>
-                        <type>_ipp._tcp</type>
-                        <subtype>_universal._sub._ipp._tcp</subtype>
-                        <port>631</port>
-                        <txt-record>txtver=1</txt-record>
-                        <txt-record>qtotal=1</txt-record>
-                        <txt-record>adminurl=http://${CUPS_IP}:631/</txt-record>
-                        <txt-record>note=CUPS Printing Service</txt-record>
-                        <txt-record>printer-state=3</txt-record>
-                        <txt-record>printer-type=0x801046</txt-record>
-                        <txt-record>pdl=application/pdf,application/postscript,image/jpeg</txt-record>
-                      </service>
-                    </service-group>
-                    EOF
-                      echo "✅ Generic fallback service created"
-                    else
-                      echo "✅ Successfully detected $PRINTER_COUNT printer(s)"
-                    fi
-                    
-                    echo ""
-                    echo "📋 Generated AirPrint service files:"
-                    ls -lh /etc/avahi/services/AirPrint-*.service 2>/dev/null || echo "⚠️  No AirPrint services found"
+                    echo "✅ AirPrint service files mounted from ConfigMap"
+                    ls -lh /etc/avahi/services/
                     
                     echo ""
                     echo "🎯 Configuration summary:"
                     echo "   Host network: ${HOSTNAME}"
                     echo "   CUPS endpoint: ${CUPS_SERVICE}:631"
                     echo "   Public IP: ${CUPS_IP}:631"
-                    echo "   Printers found: $PRINTER_COUNT"
                     echo ""
                     echo "✅ Starting Avahi daemon for mDNS broadcasting..."
                     exec avahi-daemon --no-chroot --debug
+      
+      - persistence:
+          avahi-services:
+            enabled: true
+            type: configMap
+            name: cups-avahi-service
+            globalMounts:
+              - path: /etc/avahi/services
+                readOnly: true
