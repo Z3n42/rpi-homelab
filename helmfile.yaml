@@ -436,104 +436,6 @@ releases:
                     
                     echo "✅ Starting CUPS..."
                     exec cupsd -f
-              
-              avahi:
-                image:
-                  repository: alpine
-                  tag: latest
-                securityContext:
-                  capabilities:
-                    add:
-                      - NET_ADMIN
-                env:
-                  - name: CUPS_SERVER
-                    value: "localhost:631"
-                command:
-                  - sh
-                  - -c
-                  - |
-                    echo "🔧 Installing Avahi and D-Bus for AirPrint..."
-                    apk add --no-cache avahi avahi-tools dbus python3 py3-lxml wget
-                    
-                    echo "🔧 Configuring D-Bus..."
-                    mkdir -p /var/run/dbus
-                    dbus-uuidgen > /var/lib/dbus/machine-id
-                    dbus-daemon --system --fork
-                    
-                    if ! pgrep -x dbus-daemon > /dev/null; then
-                      echo "❌ D-Bus failed to start"
-                      exit 1
-                    fi
-                    echo "✅ D-Bus started successfully"
-                    
-                    echo "🔧 Configuring Avahi..."
-                    cat > /etc/avahi/avahi-daemon.conf <<EOF
-                    [server]
-                    use-ipv4=yes
-                    use-ipv6=no
-                    allow-interfaces=eth0
-                    enable-dbus=yes
-                    
-                    [publish]
-                    publish-addresses=yes
-                    publish-hinfo=yes
-                    publish-workstation=no
-                    publish-domain=yes
-                    
-                    [reflector]
-                    enable-reflector=no
-                    EOF
-                    
-                    mkdir -p /etc/avahi/services
-                    
-                    echo "📡 Waiting for CUPS to be ready..."
-                    for i in $(seq 1 30); do
-                      if wget -q --spider http://localhost:631 2>/dev/null; then
-                        echo "✅ CUPS is ready"
-                        break
-                      fi
-                      echo "⏳ Waiting for CUPS... ($i/30)"
-                      sleep 1
-                    done
-                    
-                    echo "📡 Generating AirPrint service files..."
-                    wget -q https://raw.githubusercontent.com/tjfontaine/airprint-generate/master/airprint-generate.py -O /tmp/airprint-generate.py
-                    chmod +x /tmp/airprint-generate.py
-                    
-                    python3 /tmp/airprint-generate.py -H 192.168.1.51 -d /etc/avahi/services 2>/dev/null || {
-                      echo "⚠️  Auto-generation failed, creating manual service file..."
-                      cat > /etc/avahi/services/AirPrint-HP_LaserJet_P1005.service <<'EOFSERVICE'
-                    <?xml version="1.0" standalone='no'?>
-                    <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
-                    <service-group>
-                      <name replace-wildcards="yes">HP LaserJet P1005 @ %h</name>
-                      <service>
-                        <type>_ipp._tcp</type>
-                        <subtype>_universal._sub._ipp._tcp</subtype>
-                        <port>631</port>
-                        <txt-record>txtver=1</txt-record>
-                        <txt-record>qtotal=1</txt-record>
-                        <txt-record>rp=printers/HP_LaserJet_P1005</txt-record>
-                        <txt-record>ty=HP LaserJet P1005</txt-record>
-                        <txt-record>adminurl=http://192.168.1.51:631/</txt-record>
-                        <txt-record>note=HP LaserJet P1005</txt-record>
-                        <txt-record>priority=0</txt-record>
-                        <txt-record>product=(GPL Ghostscript)</txt-record>
-                        <txt-record>printer-state=3</txt-record>
-                        <txt-record>printer-type=0x801046</txt-record>
-                        <txt-record>Transparent=T</txt-record>
-                        <txt-record>URF=none</txt-record>
-                        <txt-record>pdl=application/octet-stream,application/pdf,application/postscript,image/jpeg,image/png,image/urf</txt-record>
-                      </service>
-                    </service-group>
-                    EOFSERVICE
-                    }
-                    
-                    echo "✅ AirPrint service files created"
-                    ls -la /etc/avahi/services/
-                    
-                    echo "✅ Starting Avahi daemon for AirPrint discovery..."
-                    exec avahi-daemon --no-drop-root --no-chroot --debug
       - service:
           main:
             controller: main
@@ -574,3 +476,189 @@ releases:
             hostPath: /dev/bus/usb
             globalMounts:
               - path: /dev/bus/usb
+
+  # -----------------------------
+  # CUPS Avahi mDNS Publisher
+  # -----------------------------
+  - name: cups-avahi
+    namespace: printing
+    chart: bjw-s/app-template
+    createNamespace: true
+    needs:
+      - printing/cups
+    secrets:
+      - secrets/app.sops.yaml
+    values:
+      - controllers:
+          main:
+            type: daemonset
+            pod:
+              hostNetwork: true
+              dnsPolicy: ClusterFirstWithHostNet
+            containers:
+              main:
+                image:
+                  repository: alpine
+                  tag: latest
+                securityContext:
+                  capabilities:
+                    add:
+                      - NET_ADMIN
+                      - NET_RAW
+                env:
+                  - name: CUPS_SERVICE
+                    value: "cups.printing.svc.cluster.local"
+                  - name: CUPS_IP
+                    value: "{{ .Values.network.services.cups.ip }}"
+                command:
+                  - sh
+                  - -c
+                  - |
+                    echo "🔧 Installing Avahi and D-Bus..."
+                    apk add --no-cache avahi avahi-tools dbus python3 py3-pip wget
+                    pip3 install --break-system-packages pycups
+                    
+                    echo "🔧 Configuring D-Bus..."
+                    mkdir -p /var/run/dbus /var/lib/dbus
+                    dbus-uuidgen > /var/lib/dbus/machine-id
+                    dbus-daemon --system --fork
+                    
+                    if ! pgrep -x dbus-daemon > /dev/null; then
+                      echo "❌ D-Bus failed to start"
+                      exit 1
+                    fi
+                    echo "✅ D-Bus started successfully"
+                    
+                    echo "🔧 Configuring Avahi..."
+                    cat > /etc/avahi/avahi-daemon.conf <<EOF
+                    [server]
+                    use-ipv4=yes
+                    use-ipv6=no
+                    allow-interfaces=eth0,wlan0
+                    enable-dbus=yes
+                    
+                    [publish]
+                    publish-addresses=yes
+                    publish-hinfo=yes
+                    publish-workstation=no
+                    publish-domain=yes
+                    
+                    [reflector]
+                    enable-reflector=no
+                    EOF
+                    
+                    mkdir -p /etc/avahi/services
+                    
+                    echo "📡 Waiting for CUPS service at ${CUPS_SERVICE}:631..."
+                    CUPS_READY=false
+                    for i in $(seq 1 60); do
+                      if wget -q --spider http://${CUPS_SERVICE}:631 2>/dev/null; then
+                        echo "✅ CUPS is ready"
+                        CUPS_READY=true
+                        break
+                      fi
+                      echo "⏳ Waiting for CUPS... ($i/60)"
+                      sleep 2
+                    done
+                    
+                    if [ "$CUPS_READY" = "false" ]; then
+                      echo "❌ CUPS not available after 120 seconds"
+                      exit 1
+                    fi
+                    
+                    echo "📡 Auto-detecting printers from CUPS..."
+                    if python3 - <<'EOFPYTHON'
+                    import cups
+                    import os
+                    import re
+                    import sys
+                    
+                    cups.setServer(os.environ.get('CUPS_SERVICE', 'localhost'))
+                    cups_ip = os.environ.get('CUPS_IP', 'localhost')
+                    
+                    try:
+                        conn = cups.Connection()
+                        printers = conn.getPrinters()
+                        
+                        if not printers:
+                            print("⚠️  No printers found in CUPS")
+                            sys.exit(1)
+                        
+                        print(f"📡 Found {len(printers)} printer(s)")
+                        
+                        for name, attrs in printers.items():
+                            safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+                            info = attrs.get('printer-info', name)
+                            model = attrs.get('printer-make-and-model', 'Printer')
+                            state = attrs.get('printer-state', 3)
+                            ptype = attrs.get('printer-type', 0x801046)
+                            
+                            service = f'''<?xml version="1.0" standalone='no'?>
+                    <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+                    <service-group>
+                      <name replace-wildcards="yes">{info}</name>
+                      <service>
+                        <type>_ipp._tcp</type>
+                        <subtype>_universal._sub._ipp._tcp</subtype>
+                        <port>631</port>
+                        <txt-record>txtver=1</txt-record>
+                        <txt-record>qtotal=1</txt-record>
+                        <txt-record>rp=printers/{name}</txt-record>
+                        <txt-record>ty={model}</txt-record>
+                        <txt-record>adminurl=http://{cups_ip}:631/</txt-record>
+                        <txt-record>note={info}</txt-record>
+                        <txt-record>printer-state={state}</txt-record>
+                        <txt-record>printer-type=0x{ptype:x}</txt-record>
+                        <txt-record>pdl=application/pdf,application/postscript</txt-record>
+                      </service>
+                    </service-group>
+                    '''
+                            
+                            with open(f'/etc/avahi/services/AirPrint-{safe_name}.service', 'w') as f:
+                                f.write(service)
+                            print(f"✅ {info} → AirPrint-{safe_name}.service")
+                        
+                        sys.exit(0)
+                        
+                    except Exception as e:
+                        print(f"❌ Error connecting to CUPS: {e}")
+                        sys.exit(1)
+                    EOFPYTHON
+                    then
+                      echo "✅ Auto-detection successful"
+                    else
+                      echo "⚠️  Auto-detection failed, creating generic fallback service..."
+                      cat > /etc/avahi/services/AirPrint-Generic.service <<EOF
+                    <?xml version="1.0" standalone='no'?>
+                    <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+                    <service-group>
+                      <name replace-wildcards="yes">CUPS Printer</name>
+                      <service>
+                        <type>_ipp._tcp</type>
+                        <subtype>_universal._sub._ipp._tcp</subtype>
+                        <port>631</port>
+                        <txt-record>txtver=1</txt-record>
+                        <txt-record>qtotal=1</txt-record>
+                        <txt-record>adminurl=http://${CUPS_IP}:631/</txt-record>
+                        <txt-record>note=CUPS Printing Service</txt-record>
+                        <txt-record>printer-state=3</txt-record>
+                        <txt-record>printer-type=0x801046</txt-record>
+                        <txt-record>pdl=application/pdf,application/postscript,image/jpeg</txt-record>
+                      </service>
+                    </service-group>
+                    EOF
+                      echo "✅ Generic fallback service created"
+                    fi
+                    
+                    echo ""
+                    echo "📋 Generated AirPrint service files:"
+                    ls -lh /etc/avahi/services/AirPrint-*.service 2>/dev/null || echo "⚠️  No AirPrint services found"
+                    
+                    echo ""
+                    echo "🎯 Configuration summary:"
+                    echo "   Host network: ${HOSTNAME}"
+                    echo "   CUPS endpoint: ${CUPS_SERVICE}:631"
+                    echo "   Public IP: ${CUPS_IP}:631"
+                    echo ""
+                    echo "✅ Starting Avahi daemon for mDNS broadcasting..."
+                    exec avahi-daemon --no-chroot --debug
