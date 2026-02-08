@@ -373,30 +373,37 @@ releases:
                 image:
                   repository: mwatz/cups
                   tag: latest
+                env:
+                  - name: CUPS_ADMIN_USER
+                    value: "{{ .Values.cups.user }}"
+                  - name: CUPS_ADMIN_PASSWORD
+                    value: "{{ .Values.cups.password }}"
                 command:
                   - sh
                   - -c
                   - |
-                    echo "👤 init: Creating CUPS admin user"
+                    echo "👤 init: Creating CUPS admin user: ${CUPS_ADMIN_USER}"
                     
-                    if ! grep -q "^admin:" /etc/passwd; then
-                      adduser --disabled-password admin
-                      echo "admin:{{ .Values.cups.password }}" | chpasswd
-                      echo "✅ User admin created"
+                    if ! grep -q "^${CUPS_ADMIN_USER}:" /etc/passwd; then
+                      adduser --disabled-password ${CUPS_ADMIN_USER}
+                      echo "${CUPS_ADMIN_USER}:${CUPS_ADMIN_PASSWORD}" | chpasswd
+                      echo "✅ User ${CUPS_ADMIN_USER} created"
                     else
-                      echo "ℹ️  User admin already exists"
+                      echo "ℹ️  User ${CUPS_ADMIN_USER} already exists"
                     fi
                     
                     addgroup lpadmin 2>/dev/null || echo "ℹ️  Group lpadmin already exists"
-                    adduser admin lpadmin 2>/dev/null || echo "ℹ️  User admin already in lpadmin"
+                    addgroup sys 2>/dev/null || echo "ℹ️  Group sys already exists"
+                    
+                    adduser ${CUPS_ADMIN_USER} lpadmin 2>/dev/null || echo "ℹ️  User already in lpadmin"
+                    adduser ${CUPS_ADMIN_USER} sys 2>/dev/null || echo "ℹ️  User already in sys"
                     
                     echo "📋 Copying user files to shared volume..."
                     cp /etc/passwd /shared-etc/passwd
                     cp /etc/shadow /shared-etc/shadow
                     cp /etc/group /shared-etc/group
                     
-                    # Verificar
-                    id admin
+                    id ${CUPS_ADMIN_USER}
                     echo "✅ CUPS admin user configured"
             pod:
               dnsPolicy: ClusterFirst
