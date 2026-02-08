@@ -598,7 +598,8 @@ releases:
                     publish-domain=yes
                     
                     [reflector]
-                    enable-reflector=no
+                    enable-reflector=yes
+                    reflect-ipv=yes
                     EOF
                     
                     echo "✅ AirPrint service files mounted from ConfigMap"
