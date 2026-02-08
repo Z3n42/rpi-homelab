@@ -328,6 +328,8 @@ releases:
                 </Location>
                 
                 <Location /admin/conf>
+                  AuthType Default
+                  Require user @SYSTEM
                   Order allow,deny
                   Allow from all
                 </Location>
@@ -434,6 +436,91 @@ releases:
                     
                     echo "✅ Starting CUPS..."
                     exec cupsd -f
+              
+              avahi:
+                image:
+                  repository: alpine
+                  tag: latest
+                securityContext:
+                  capabilities:
+                    add:
+                      - NET_ADMIN
+                env:
+                  - name: CUPS_SERVER
+                    value: "localhost:631"
+                command:
+                  - sh
+                  - -c
+                  - |
+                    echo "🔧 Installing Avahi for AirPrint..."
+                    apk add --no-cache avahi avahi-tools dbus python3 py3-lxml wget
+                    
+                    echo "🔧 Configuring Avahi..."
+                    cat > /etc/avahi/avahi-daemon.conf <<EOF
+                    [server]
+                    use-ipv4=yes
+                    use-ipv6=no
+                    allow-interfaces=eth0
+                    enable-dbus=no
+                    
+                    [publish]
+                    publish-addresses=yes
+                    publish-hinfo=yes
+                    publish-workstation=no
+                    publish-domain=yes
+                    
+                    [reflector]
+                    enable-reflector=no
+                    EOF
+                    
+                    mkdir -p /etc/avahi/services
+                    
+                    echo "📡 Waiting for CUPS to be ready..."
+                    sleep 15
+                    
+                    echo "📡 Generating AirPrint service files..."
+                    wget -q https://raw.githubusercontent.com/tjfontaine/airprint-generate/master/airprint-generate.py -O /tmp/airprint-generate.py
+                    chmod +x /tmp/airprint-generate.py
+                    
+                    python3 /tmp/airprint-generate.py -H 192.168.1.51 -d /etc/avahi/services || true
+                    
+                    if [ ! -f /etc/avahi/services/AirPrint-*.service ]; then
+                      echo "⚠️  Auto-generation failed, creating manual service file..."
+                      cat > /etc/avahi/services/AirPrint-HP_LaserJet_P1005.service <<EOF
+                    <?xml version="1.0" standalone='no'?>
+                    <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+                    <service-group>
+                      <name replace-wildcards="yes">HP LaserJet P1005 @ %h</name>
+                      <service>
+                        <type>_ipp._tcp</type>
+                        <subtype>_universal._sub._ipp._tcp</subtype>
+                        <port>631</port>
+                        <txt-record>txtver=1</txt-record>
+                        <txt-record>qtotal=1</txt-record>
+                        <txt-record>rp=printers/HP_LaserJet_P1005</txt-record>
+                        <txt-record>ty=HP LaserJet P1005</txt-record>
+                        <txt-record>adminurl=http://192.168.1.51:631/</txt-record>
+                        <txt-record>note=HP LaserJet P1005</txt-record>
+                        <txt-record>priority=0</txt-record>
+                        <txt-record>product=(GPL Ghostscript)</txt-record>
+                        <txt-record>printer-state=3</txt-record>
+                        <txt-record>printer-type=0x801046</txt-record>
+                        <txt-record>Transparent=T</txt-record>
+                        <txt-record>URF=none</txt-record>
+                        <txt-record>pdl=application/octet-stream,application/pdf,application/postscript,image/jpeg,image/png,image/urf</txt-record>
+                      </service>
+                    </service-group>
+                    EOF
+                    fi
+                    
+                    echo "✅ AirPrint service files created"
+                    ls -la /etc/avahi/services/
+                    
+                    mkdir -p /var/run/dbus
+                    dbus-daemon --system --fork || true
+                    
+                    echo "✅ Starting Avahi daemon for AirPrint discovery..."
+                    exec avahi-daemon --no-drop-root --no-chroot --debug
       - service:
           main:
             controller: main
