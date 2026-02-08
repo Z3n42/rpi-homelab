@@ -328,8 +328,6 @@ releases:
                 </Location>
                 
                 <Location /admin/conf>
-                  AuthType Default
-                  Require user @SYSTEM
                   Order allow,deny
                   Allow from all
                 </Location>
