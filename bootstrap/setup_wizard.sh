@@ -71,10 +71,25 @@ apt update -qq && apt install -y \
 systemctl enable --now iscsid rpcbind nfs-client.target
 
 ZENPI_IP=$(awk '/zenpi_ip/{print $2; exit}' values/network.yaml | tr -d '"')
+PIHOLE_IP=$(awk '/primary_ip/{print $2; exit}' values/network.yaml | tr -d '"')
 
 if [ -n "$ZENPI_IP" ]; then
   echo -e "${GREEN}Configuring static IP $ZENPI_IP via netplan...${NC}"
   NETPLAN_FILE="/etc/netplan/01-zenpi.yaml"
+
+  # DNS: use pihole if already running, otherwise temporary public DNS
+  DNS_PRIMARY="1.1.1.1"
+  DNS_SECONDARY="8.8.8.8"
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml 
+  if kubectl wait pod -n pihole -l app.kubernetes.io/name=pihole \
+      --for=condition=Ready --timeout=5s &>/dev/null 2>&1; then
+    DNS_PRIMARY="${PIHOLE_IP}"
+    DNS_SECONDARY="1.1.1.1"
+    echo "    - Pihole running → using as primary DNS"
+  else
+    echo "    - Pihole not available → using public DNS (temporary)"
+  fi
+
   cat > "$NETPLAN_FILE" <<EOF
 network:
   version: 2
@@ -90,10 +105,13 @@ network:
           via: 192.168.1.1
       nameservers:
         addresses:
+          - ${DNS_PRIMARY}
+          - ${DNS_SECONDARY}
 EOF
   chmod 600 "$NETPLAN_FILE"
   netplan generate && netplan apply
-  echo "✅ IP applied: $(ip addr show eth0 | grep 'inet ' | awk '{print $2}')"
+  echo "    ✅ IP applied: $(ip addr show eth0 | grep 'inet ' | awk '{print $2}')"
+  echo "    ✅ DNS: ${DNS_PRIMARY} (primary), ${DNS_SECONDARY} (fallback)"
 fi
 
 # ------------------------------------------------------------------------------
