@@ -64,6 +64,28 @@ releases:
       - "zenpi"
       - "node.longhorn.io/drain-policy=block-if-contains-last-replica"
       - "--overwrite"
+    - events: [postsync]
+      showlogs: true
+      command: "kubectl"
+      args:
+        - "wait"
+        - "--namespace"
+        - "longhorn-system"
+        - "--for=condition=ready"
+        - "pod"
+        - "--selector=app=longhorn-manager"
+        - "--timeout=300s"
+    - events: [postsync]
+      showlogs: true
+      command: "kubectl"
+      args:
+        - "wait"
+        - "--namespace"
+        - "longhorn-system"
+        - "--for=condition=ready"
+        - "pod"
+        - "--selector=app=longhorn-csi-plugin"
+        - "--timeout=300s"
     values:
       - values/longhorn.yaml
 
@@ -89,6 +111,7 @@ releases:
     needs:
       - traefik-system/traefik-crds
       - metallb-system/metallb-config
+      - longhorn-system/longhorn 
     secrets:
       - secrets/app.sops.yaml
     values:
