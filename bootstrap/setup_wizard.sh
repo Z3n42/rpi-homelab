@@ -11,8 +11,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 YELLOW='\033[1;33m'
 
-# Check Root
-if [ "$EUID" -ne 0 ]; then 
+if [ "$EUID" -ne 0 ]; then
   echo -e "${RED}Please run as root (sudo ./setup_wizard.sh)${NC}"
   exit 1
 fi
@@ -162,48 +161,80 @@ disable:
   - servicelb
 EOF
 
-echo " - Applying flannel startup guard..."
+echo " - Deploying flannel bootstrap service..."
+
+cat > /etc/systemd/system/k3s-flannel-bootstrap.service << 'EOF'
+[Unit]
+Description=K3s Flannel subnet.env bootstrap
+Before=k3s.service
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c '\
+  mkdir -p /run/flannel; \
+  cache=/var/lib/rancher/k3s/agent/etc/flannel/subnet.env; \
+  if [ -f "$cache" ]; then \
+    cp "$cache" /run/flannel/subnet.env; \
+    echo "flannel-bootstrap: subnet.env restored from cache"; \
+  else \
+    printf "FLANNEL_NETWORK=10.42.0.0/16\nFLANNEL_SUBNET=10.42.0.1/24\nFLANNEL_MTU=1450\nFLANNEL_IPMASQ=true\n" \
+      > /run/flannel/subnet.env; \
+    echo "flannel-bootstrap: subnet.env created from defaults (no cache yet)"; \
+  fi'
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat > /etc/systemd/system/k3s-flannel-cache.service << 'EOF'
+[Unit]
+Description=K3s Flannel subnet.env cache updater
+After=k3s.service
+Requires=k3s.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=/bin/bash -c '\
+  i=0; \
+  while [ $i -lt 30 ]; do \
+    if [ -s /run/flannel/subnet.env ]; then \
+      mkdir -p /var/lib/rancher/k3s/agent/etc/flannel/; \
+      cp /run/flannel/subnet.env /var/lib/rancher/k3s/agent/etc/flannel/subnet.env; \
+      echo "flannel-cache: updated ($(grep FLANNEL_SUBNET /run/flannel/subnet.env))"; \
+      exit 0; \
+    fi; \
+    sleep 2; i=$((i+1)); \
+  done; \
+  echo "flannel-cache: timeout — keeping existing cache"'
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 mkdir -p /etc/systemd/system/k3s.service.d
 cat > /etc/systemd/system/k3s.service.d/flannel-wait.conf << 'EOF'
-[Service]
-# Layer 1: restore subnet.env from persistent cache before K3s starts
-ExecStartPre=/bin/bash -c '\
-  mkdir -p /run/flannel; \
-  src=/var/lib/rancher/k3s/agent/etc/flannel/subnet.env; \
-  if [ -f "$src" ]; then \
-    cp "$src" /run/flannel/subnet.env; \
-    echo "flannel: subnet.env restored from cache"; \
-  else \
-    echo "flannel: no cache found (cold boot — pods will retry after flannel init)"; \
-  fi'
-# Layer 2: safety net — block until subnet.env is confirmed present
-ExecStartPost=/bin/bash -c 'until [ -f /run/flannel/subnet.env ]; do sleep 2; done'
-# Layer 3: update persistent cache with fresh subnet.env for next reboot
-ExecStartPost=/bin/bash -c '\
-  mkdir -p /var/lib/rancher/k3s/agent/etc/flannel/; \
-  cp /run/flannel/subnet.env /var/lib/rancher/k3s/agent/etc/flannel/subnet.env && \
-  echo "flannel: subnet.env cache updated for next boot"'
+[Unit]
+After=k3s-flannel-bootstrap.service
+Requires=k3s-flannel-bootstrap.service
 EOF
+
 systemctl daemon-reload
-echo "    ✅ Flannel guard active ($(systemctl cat k3s | grep -c ExecStartPre) ExecStartPre + $(systemctl cat k3s | grep -c ExecStartPost) ExecStartPost found)"
+systemctl enable k3s-flannel-bootstrap.service k3s-flannel-cache.service 2>/dev/null || true
+echo "    ✅ k3s-flannel-bootstrap.service enabled (Before=k3s)"
+echo "    ✅ k3s-flannel-cache.service enabled (After=k3s, 60s timeout)"
 
-echo " - Seeding flannel subnet.env cache..."
-if [ -f /run/flannel/subnet.env ]; then
-  mkdir -p /var/lib/rancher/k3s/agent/etc/flannel/
-  cp /run/flannel/subnet.env /var/lib/rancher/k3s/agent/etc/flannel/subnet.env
-  echo "    ✅ Cache seeded: $(grep FLANNEL_SUBNET /run/flannel/subnet.env)"
-else
-  echo "    ⚠️  subnet.env not found yet — cache will be seeded after next K3s start"
-fi
+echo " - Deploying Unknown pod cleanup service..."
 
-echo " - Applying Unknown pod cleanup service..."
 cat > /usr/local/bin/k3s-cleanup-unknown-pods.sh << 'EOF'
 #!/bin/bash
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 until kubectl get nodes &>/dev/null; do sleep 5; done
 kubectl wait node --all --for=condition=Ready --timeout=180s 2>/dev/null || true
-UNKNOWN=$(kubectl get pods -A --field-selector=status.phase=Unknown \
-  -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}')
+
+UNKNOWN=$(kubectl get pods -A | awk '$4=="Unknown" {print $1, $2}')
 if [ -n "$UNKNOWN" ]; then
   echo "$UNKNOWN" | while read ns pod; do
     [ -n "$ns" ] && [ -n "$pod" ] && \
@@ -236,22 +267,20 @@ systemctl enable k3s-pod-cleanup.service 2>/dev/null || true
 echo "    ✅ Unknown pod cleanup service enabled"
 
 if [ -f /etc/systemd/system/k3s.service ]; then
-    echo "    - Verifying k3s.service integrity..."
-    if grep -q "ExecStart=.*\\\\" /etc/systemd/system/k3s.service || grep -q "disable" /etc/systemd/system/k3s.service; then
-        echo -e "${YELLOW}⚠️  Fixing ExecStart in k3s.service...${NC}"
-        sed -i 's|^ExecStart=.*|ExecStart=/usr/local/bin/k3s server|' /etc/systemd/system/k3s.service
-        systemctl daemon-reload
-        systemctl restart k3s
-        sleep 10
-    fi
+  if grep -q "ExecStart=.*\\\\" /etc/systemd/system/k3s.service; then
+    echo -e "${YELLOW}⚠️  Fixing ExecStart in k3s.service...${NC}"
+    sed -i 's|^ExecStart=.*|ExecStart=/usr/local/bin/k3s server|' /etc/systemd/system/k3s.service
+    systemctl daemon-reload
+    systemctl restart k3s
+    sleep 10
+  fi
 fi
 
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 if command -v kubectl &> /dev/null && [ -f /etc/rancher/k3s/k3s.yaml ]; then
-    echo "    - Cleaning residual LoadBalancer pods..."
-    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-    kubectl delete daemonset -n kube-system -l svccontroller.k3s.cattle.io/svcname=pihole-dns --ignore-not-found=true 2>/dev/null
-    kubectl delete daemonset -n kube-system -l svccontroller.k3s.cattle.io/svcname=pihole-web --ignore-not-found=true 2>/dev/null
-    kubectl delete daemonset -n kube-system -l svccontroller.k3s.cattle.io/svcname=traefik --ignore-not-found=true 2>/dev/null
+  kubectl delete daemonset -n kube-system -l svccontroller.k3s.cattle.io/svcname=pihole-dns --ignore-not-found=true 2>/dev/null
+  kubectl delete daemonset -n kube-system -l svccontroller.k3s.cattle.io/svcname=pihole-web --ignore-not-found=true 2>/dev/null
+  kubectl delete daemonset -n kube-system -l svccontroller.k3s.cattle.io/svcname=traefik --ignore-not-found=true 2>/dev/null
 fi
 
 # ------------------------------------------------------------------------------
@@ -383,7 +412,7 @@ if [ -f /run/flannel/subnet.env ]; then
   cp /run/flannel/subnet.env /var/lib/rancher/k3s/agent/etc/flannel/subnet.env
   echo "    ✅ Cache seeded: $(grep FLANNEL_SUBNET /run/flannel/subnet.env)"
 else
-  echo -e "    ${YELLOW}⚠️  subnet.env still not present — Layer 3 ExecStartPost will cache it on next K3s start${NC}"
+  echo -e "    ${YELLOW}⚠️  subnet.env not present — k3s-flannel-cache.service lo sembrará al reiniciar${NC}"
 fi
 
 echo " - Cleaning up Unknown pods..."
@@ -393,8 +422,7 @@ while read ns pod; do
   kubectl delete pod -n "$ns" "$pod" --grace-period=0 --force 2>/dev/null && \
     echo "    - Deleted Unknown pod: $ns/$pod"
   UNKNOWN_COUNT=$((UNKNOWN_COUNT + 1))
-done < <(kubectl get pods -A --field-selector=status.phase=Unknown \
-  -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null)
+done < <(kubectl get pods -A | awk '$4=="Unknown" {print $1, $2}')
 
 if [ "$UNKNOWN_COUNT" -gt 0 ]; then
   echo "    ✅ Cleaned ${UNKNOWN_COUNT} Unknown pod(s)"
