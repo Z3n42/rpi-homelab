@@ -166,22 +166,35 @@ echo " - Applying flannel startup guard..."
 mkdir -p /etc/systemd/system/k3s.service.d
 cat > /etc/systemd/system/k3s.service.d/flannel-wait.conf << 'EOF'
 [Service]
-# Layer 1: pre-populate /run/flannel/subnet.env from K3s persistent state
-# Avoids CNI failures on boot when /run is empty (tmpfs) but K3s already ran before
+# Layer 1: restore subnet.env from persistent cache before K3s starts
 ExecStartPre=/bin/bash -c '\
   mkdir -p /run/flannel; \
   src=/var/lib/rancher/k3s/agent/etc/flannel/subnet.env; \
   if [ -f "$src" ]; then \
     cp "$src" /run/flannel/subnet.env; \
-    echo "flannel: subnet.env pre-populated from persistent state"; \
+    echo "flannel: subnet.env restored from cache"; \
   else \
-    echo "flannel: no persistent state (first boot)"; \
+    echo "flannel: no cache found (cold boot — pods will retry after flannel init)"; \
   fi'
 # Layer 2: safety net — block until subnet.env is confirmed present
 ExecStartPost=/bin/bash -c 'until [ -f /run/flannel/subnet.env ]; do sleep 2; done'
+# Layer 3: update persistent cache with fresh subnet.env for next reboot
+ExecStartPost=/bin/bash -c '\
+  mkdir -p /var/lib/rancher/k3s/agent/etc/flannel/; \
+  cp /run/flannel/subnet.env /var/lib/rancher/k3s/agent/etc/flannel/subnet.env && \
+  echo "flannel: subnet.env cache updated for next boot"'
 EOF
 systemctl daemon-reload
 echo "    ✅ Flannel guard active ($(systemctl cat k3s | grep -c ExecStartPre) ExecStartPre + $(systemctl cat k3s | grep -c ExecStartPost) ExecStartPost found)"
+
+echo " - Seeding flannel subnet.env cache..."
+if [ -f /run/flannel/subnet.env ]; then
+  mkdir -p /var/lib/rancher/k3s/agent/etc/flannel/
+  cp /run/flannel/subnet.env /var/lib/rancher/k3s/agent/etc/flannel/subnet.env
+  echo "    ✅ Cache seeded: $(grep FLANNEL_SUBNET /run/flannel/subnet.env)"
+else
+  echo "    ⚠️  subnet.env not found yet — cache will be seeded after next K3s start"
+fi
 
 echo " - Applying Unknown pod cleanup service..."
 cat > /usr/local/bin/k3s-cleanup-unknown-pods.sh << 'EOF'
