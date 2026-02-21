@@ -371,6 +371,37 @@ elif [ "$MODE" == "2" ]; then
   echo -e "\n${GREEN}✅ SUCCESS! Your Pi is now a GitOps Worker.${NC}"
 fi
 
+# ------------------------------------------------------------------------------
+# PHASE 3.5: POST-DEPLOY STABILIZATION
+# ------------------------------------------------------------------------------
+echo -e "\n${GREEN}--> [3.5/5] Post-deploy stabilization...${NC}"
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+echo " - Seeding flannel subnet.env cache..."
+if [ -f /run/flannel/subnet.env ]; then
+  mkdir -p /var/lib/rancher/k3s/agent/etc/flannel/
+  cp /run/flannel/subnet.env /var/lib/rancher/k3s/agent/etc/flannel/subnet.env
+  echo "    ✅ Cache seeded: $(grep FLANNEL_SUBNET /run/flannel/subnet.env)"
+else
+  echo -e "    ${YELLOW}⚠️  subnet.env still not present — Layer 3 ExecStartPost will cache it on next K3s start${NC}"
+fi
+
+echo " - Cleaning up Unknown pods..."
+UNKNOWN_COUNT=0
+while read ns pod; do
+  [ -n "$ns" ] && [ -n "$pod" ] || continue
+  kubectl delete pod -n "$ns" "$pod" --grace-period=0 --force 2>/dev/null && \
+    echo "    - Deleted Unknown pod: $ns/$pod"
+  UNKNOWN_COUNT=$((UNKNOWN_COUNT + 1))
+done < <(kubectl get pods -A --field-selector=status.phase=Unknown \
+  -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null)
+
+if [ "$UNKNOWN_COUNT" -gt 0 ]; then
+  echo "    ✅ Cleaned ${UNKNOWN_COUNT} Unknown pod(s)"
+else
+  echo "    ✅ No Unknown pods found"
+fi
+
 echo -e "\n${BLUE}=================================================${NC}"
 echo -e "${BLUE} 🎉 INSTALLATION COMPLETE! ${NC}"
 echo -e "${BLUE}=================================================${NC}"
