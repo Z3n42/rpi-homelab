@@ -77,12 +77,10 @@ if [ -n "$ZENPI_IP" ]; then
   echo -e "${GREEN}Configuring static IP $ZENPI_IP via netplan...${NC}"
   NETPLAN_FILE="/etc/netplan/01-zenpi.yaml"
 
-  # DNS: use pihole if already running, otherwise temporary public DNS
   DNS_PRIMARY="1.1.1.1"
   DNS_SECONDARY="8.8.8.8"
-  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml 
-  if kubectl wait pod -n pihole -l app.kubernetes.io/name=pihole \
-      --for=condition=Ready --timeout=5s &>/dev/null 2>&1; then
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  if kubectl get pod -n pihole --field-selector=status.phase=Running 2>/dev/null | grep -q Running; then
     DNS_PRIMARY="${PIHOLE_IP}"
     DNS_SECONDARY="1.1.1.1"
     echo "    - Pihole running → using as primary DNS"
@@ -168,10 +166,61 @@ echo " - Applying flannel startup guard..."
 mkdir -p /etc/systemd/system/k3s.service.d
 cat > /etc/systemd/system/k3s.service.d/flannel-wait.conf << 'EOF'
 [Service]
+# Layer 1: pre-populate /run/flannel/subnet.env from K3s persistent state
+# Avoids CNI failures on boot when /run is empty (tmpfs) but K3s already ran before
+ExecStartPre=/bin/bash -c '\
+  mkdir -p /run/flannel; \
+  src=/var/lib/rancher/k3s/agent/etc/flannel/subnet.env; \
+  if [ -f "$src" ]; then \
+    cp "$src" /run/flannel/subnet.env; \
+    echo "flannel: subnet.env pre-populated from persistent state"; \
+  else \
+    echo "flannel: no persistent state (first boot)"; \
+  fi'
+# Layer 2: safety net — block until subnet.env is confirmed present
 ExecStartPost=/bin/bash -c 'until [ -f /run/flannel/subnet.env ]; do sleep 2; done'
 EOF
 systemctl daemon-reload
-echo "    ✅ Flannel guard active ($(systemctl cat k3s | grep -c ExecStartPost) ExecStartPost found)"
+echo "    ✅ Flannel guard active ($(systemctl cat k3s | grep -c ExecStartPre) ExecStartPre + $(systemctl cat k3s | grep -c ExecStartPost) ExecStartPost found)"
+
+echo " - Applying Unknown pod cleanup service..."
+cat > /usr/local/bin/k3s-cleanup-unknown-pods.sh << 'EOF'
+#!/bin/bash
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+until kubectl get nodes &>/dev/null; do sleep 5; done
+kubectl wait node --all --for=condition=Ready --timeout=180s 2>/dev/null || true
+UNKNOWN=$(kubectl get pods -A --field-selector=status.phase=Unknown \
+  -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}')
+if [ -n "$UNKNOWN" ]; then
+  echo "$UNKNOWN" | while read ns pod; do
+    [ -n "$ns" ] && [ -n "$pod" ] && \
+      kubectl delete pod -n "$ns" "$pod" --grace-period=0 --force 2>/dev/null && \
+      echo "Deleted Unknown pod: $ns/$pod"
+  done
+else
+  echo "No Unknown pods found."
+fi
+EOF
+chmod +x /usr/local/bin/k3s-cleanup-unknown-pods.sh
+
+cat > /etc/systemd/system/k3s-pod-cleanup.service << 'EOF'
+[Unit]
+Description=K3s Unknown Pod Cleanup
+After=k3s.service
+Requires=k3s.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/k3s-cleanup-unknown-pods.sh
+StandardOutput=journal
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable k3s-pod-cleanup.service 2>/dev/null || true
+echo "    ✅ Unknown pod cleanup service enabled"
 
 if [ -f /etc/systemd/system/k3s.service ]; then
     echo "    - Verifying k3s.service integrity..."

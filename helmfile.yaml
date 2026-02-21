@@ -54,6 +54,16 @@ releases:
     namespace: longhorn-system
     chart: longhorn/longhorn
     installed: true
+    hooks:
+    - events: [preuninstall]
+      showlogs: true
+      command: "kubectl"
+      args:
+      - "annotate"
+      - "node"
+      - "zenpi"
+      - "node.longhorn.io/drain-policy=block-if-contains-last-replica"
+      - "--overwrite"
     values:
       - values/longhorn.yaml
 
