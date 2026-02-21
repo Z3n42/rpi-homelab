@@ -146,6 +146,15 @@ disable:
   - servicelb
 EOF
 
+echo " - Applying flannel startup guard..."
+mkdir -p /etc/systemd/system/k3s.service.d
+cat > /etc/systemd/system/k3s.service.d/flannel-wait.conf << 'EOF'
+[Service]
+ExecStartPost=/bin/bash -c 'until [ -f /run/flannel/subnet.env ]; do sleep 2; done'
+EOF
+systemctl daemon-reload
+echo "    ✅ Flannel guard active ($(systemctl cat k3s | grep -c ExecStartPost) ExecStartPost found)"
+
 if [ -f /etc/systemd/system/k3s.service ]; then
     echo "    - Verifying k3s.service integrity..."
     if grep -q "ExecStart=.*\\\\" /etc/systemd/system/k3s.service || grep -q "disable" /etc/systemd/system/k3s.service; then
