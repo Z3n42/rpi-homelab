@@ -265,16 +265,14 @@ resources:
                 - name: pihole-logs
                   mountPath: /var/log/pihole
               readinessProbe:
-                httpGet:
-                  path: /api/info
+                tcpSocket:
                   port: 80
                 initialDelaySeconds: 15
                 periodSeconds: 10
                 timeoutSeconds: 3
                 failureThreshold: 6
               livenessProbe:
-                httpGet:
-                  path: /api/info
+                tcpSocket:
                   port: 80
                 initialDelaySeconds: 30
                 periodSeconds: 30
