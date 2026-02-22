@@ -33,8 +33,8 @@ resources:
           edns-buffer-size: 1232
           prefetch: yes
           num-threads: 1
-          so-rcvbuf: 1m
-          so-sndbuf: 1m
+          so-rcvbuf: 0
+          so-sndbuf: 0
           private-domain: "local"
           private-domain: "lan"
           domain-insecure: "local"
@@ -242,6 +242,11 @@ resources:
                   value: "Europe/Madrid"
                 - name: DNSMASQ_LISTENING
                   value: "all"
+                - name: FTLCONF_webserver_api_password
+                  valueFrom:
+                    secretKeyRef:
+                      name: pihole-web-password
+                      key: password
               ports:
                 - containerPort: 53
                   name: domain-udp
@@ -259,43 +264,22 @@ resources:
                   mountPath: /etc/dnsmasq.d
                 - name: pihole-logs
                   mountPath: /var/log/pihole
-                - name: pihole-password
-                  mountPath: /etc/pihole-password
-                  readOnly: true
-              lifecycle:
-                postStart:
-                  exec:
-                    command:
-                      - sh
-                      - -c
-                      - |
-                        echo "[postStart] Ensuring FTL runtime directory exists..."
-                        mkdir -p /run/pihole-ftl
-                        chown pihole:pihole /run/pihole-ftl
-
-                        echo "[postStart] Waiting for FTL process..."
-                        for i in $(seq 1 300); do
-                          if pgrep -x "pihole-FTL" >/dev/null; then
-                            echo "[postStart] FTL process detected"
-                            break
-                          fi
-                          sleep 1
-                        done
-
-                        echo "[postStart] Waiting for FTL socket..."
-                        for i in $(seq 1 300); do
-                          if [ -S /run/pihole-ftl/pihole-FTL.sock ]; then
-                            echo "[postStart] FTL socket detected"
-                            break
-                          fi
-                          sleep 1
-                        done
-
-                        PASSWORD=$(cat /etc/pihole-password/password)
-                        echo "[postStart] Setting admin password..."
-                        pihole setpassword "$PASSWORD" || echo "[postStart] WARNING: setpasswd failed"
-
-                        echo "[postStart] Done"
+              readinessProbe:
+                httpGet:
+                  path: /
+                  port: 80
+                initialDelaySeconds: 15
+                periodSeconds: 10
+                timeoutSeconds: 3
+                failureThreshold: 6
+              livenessProbe:
+                httpGet:
+                  path: /
+                  port: 80
+                initialDelaySeconds: 30
+                periodSeconds: 30
+                timeoutSeconds: 5
+                failureThreshold: 3
 
             - name: unbound
               image: crazymax/unbound:1.24.0
@@ -343,10 +327,6 @@ resources:
 
             - name: pihole-logs
               emptyDir: {}
-
-            - name: pihole-password
-              secret:
-                secretName: pihole-web-password
 
             - name: unbound-conf
               configMap:
