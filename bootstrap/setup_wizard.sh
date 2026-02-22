@@ -133,11 +133,12 @@ echo "usblp" >/etc/modules-load.d/printer.conf
 
 systemctl enable --now iscsid 2>/dev/null || true
 
-# Disable host avahi-daemon 
-echo "    🔧 Disabling host avahi-daemon (conflicts with cups-avahi pod)..."
-systemctl stop avahi-daemon avahi-daemon.socket 2>/dev/null || true
-systemctl disable avahi-daemon avahi-daemon.socket 2>/dev/null || true
-echo "    ✅ avahi-daemon disabled (mDNS handled by cups-avahi pod)"
+# stop avahi-daemon
+echo "    🔧 Masking host avahi-daemon (conflicts with cups-avahi pod)..."
+systemctl stop avahi-daemon.socket avahi-daemon 2>/dev/null || true
+systemctl disable avahi-daemon.socket avahi-daemon 2>/dev/null || true
+systemctl mask avahi-daemon.socket avahi-daemon 2>/dev/null || true
+echo "    ✅ avahi-daemon masked (mDNS handled by cups-avahi pod)"
 
 # HP P1005: disable USB autosuspend
 cat > /etc/udev/rules.d/99-hp-p1005.rules <<'EOF'
