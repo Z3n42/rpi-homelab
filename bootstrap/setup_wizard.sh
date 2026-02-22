@@ -133,6 +133,16 @@ echo "usblp" >/etc/modules-load.d/printer.conf
 
 systemctl enable --now iscsid 2>/dev/null || true
 
+# HP P1005: disable USB autosuspend
+cat > /etc/udev/rules.d/99-hp-p1005.rules <<'EOF'
+SUBSYSTEM=="usb", ATTR{idVendor}=="03f0", ATTR{idProduct}=="3d17", \
+  ATTR{power/control}="on", \
+  ATTR{power/autosuspend_delay_ms}="-1"
+EOF
+udevadm control --reload-rules
+udevadm trigger --subsystem-match=usb 2>/dev/null || true
+echo "    ✅ HP P1005 USB autosuspend disabled (udev rule applied)"
+
 # ------------------------------------------------------------------------------
 # PHASE 1.5: K3s INSTALL & CONFIGURATION
 # ------------------------------------------------------------------------------
