@@ -266,7 +266,7 @@ resources:
                   mountPath: /var/log/pihole
               readinessProbe:
                 httpGet:
-                  path: /
+                  path: /api/info
                   port: 80
                 initialDelaySeconds: 15
                 periodSeconds: 10
@@ -274,7 +274,7 @@ resources:
                 failureThreshold: 6
               livenessProbe:
                 httpGet:
-                  path: /
+                  path: /api/info
                   port: 80
                 initialDelaySeconds: 30
                 periodSeconds: 30
