@@ -164,7 +164,6 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="03f0", ATTR{idProduct}=="3d17", \
   RUN+="/bin/bash -c '/usr/bin/foo2zjs-loadfw HP1005 /dev/%E{DEVNAME} < /opt/printer-firmware/sihp1005.dl 2>/dev/null || true'"
 EOF
 
-# Instalar foo2zjs-loadfw si no existe
 if ! command -v foo2zjs-loadfw >/dev/null 2>&1; then
   apt-get install -y printer-driver-foo2zjs-common || echo "    ⚠️  foo2zjs tools not available"
 fi
@@ -172,6 +171,7 @@ fi
 udevadm control --reload-rules
 udevadm trigger --subsystem-match=usb
 echo "    ✅ HP P1005 firmware auto-load enabled (udev + preload)"
+cd "$REPO_ROOT" || { echo -e "${RED}Error: Could not return to repo root.${NC}"; exit 1; } 
 
 # ------------------------------------------------------------------------------
 # PHASE 1.5: K3s INSTALL & CONFIGURATION
@@ -392,8 +392,10 @@ export SOPS_AGE_KEY_FILE="$KEY_FILE"
 
 # Validate SOPS decryption
 echo -e "${GREEN}Validating SOPS decryption...${NC}"
-if ! sops -d secrets/app.sops.yaml >/dev/null 2>&1; then
-  echo -e "${RED}❌ SOPS decryption failed. Wrong key?${NC}"
+SOPS_OUTPUT=$(SOPS_AGE_KEY_FILE="$KEY_FILE" sops -d "$REPO_ROOT/secrets/app.sops.yaml" 2>&1)
+if [ $? -ne 0 ]; then
+  echo -e "${RED}❌ SOPS decryption failed:${NC}"
+  echo "$SOPS_OUTPUT"
   exit 1
 fi
 echo -e "${GREEN}✔ SOPS decryption OK${NC}"
