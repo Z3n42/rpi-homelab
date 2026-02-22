@@ -57,6 +57,10 @@ resources:
         
         [webserver]
         port = 80
+
+        [database]
+        maxDBdays = 30
+        DBinterval = 60.0
         
         [adlists]
         sources = [
@@ -77,19 +81,6 @@ resources:
       resources:
         requests:
           storage: 2Gi
-
-  - apiVersion: v1
-    kind: PersistentVolumeClaim
-    metadata:
-      name: pihole-dnsmasq-pvc
-      namespace: pihole
-    spec:
-      accessModes:
-        - ReadWriteOnce
-      storageClassName: longhorn
-      resources:
-        requests:
-          storage: 100Mi
 
   # Critical initialization Job - must run BEFORE Deployment
   - apiVersion: batch/v1
@@ -216,8 +207,7 @@ resources:
               persistentVolumeClaim:
                 claimName: pihole-pvc-v6
             - name: dnsmasq-storage
-              persistentVolumeClaim:
-                claimName: pihole-dnsmasq-pvc
+              emptyDir: {}
             - name: config-source
               configMap:
                 name: pihole-v6-config
@@ -267,6 +257,8 @@ resources:
                   mountPath: /etc/pihole
                 - name: dnsmasq-storage
                   mountPath: /etc/dnsmasq.d
+                - name: pihole-logs
+                  mountPath: /var/log/pihole
                 - name: pihole-password
                   mountPath: /etc/pihole-password
                   readOnly: true
@@ -347,8 +339,10 @@ resources:
                 claimName: pihole-pvc-v6
 
             - name: dnsmasq-storage
-              persistentVolumeClaim:
-                claimName: pihole-dnsmasq-pvc
+              emptyDir: {}
+
+            - name: pihole-logs
+              emptyDir: {}
 
             - name: pihole-password
               secret:

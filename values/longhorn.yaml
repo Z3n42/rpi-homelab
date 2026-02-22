@@ -1,3 +1,9 @@
 persistence:
   defaultClass: true
   defaultClassReplicaCount: 1
+
+instanceManager:
+  cpuRequest: 50m
+  memoryRequest: 128Mi
+  defaultSettings:
+    fuseMountLbfifoBufferSize: "2097152"

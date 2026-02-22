@@ -143,6 +143,36 @@ udevadm control --reload-rules
 udevadm trigger --subsystem-match=usb 2>/dev/null || true
 echo "    ✅ HP P1005 USB autosuspend disabled (udev rule applied)"
 
+# HP P1005: preload firmware y cargar en hotplug
+echo "    📥 Preloading HP P1005 firmware..."
+mkdir -p /opt/printer-firmware
+cd /opt/printer-firmware
+
+if [ ! -f sihp1005.dl ]; then
+  wget -q http://foo2zjs.rkkda.com/firmware/sihp1005.dl \
+    && echo "    ✅ Firmware downloaded" \
+    || echo "    ⚠️  Firmware download failed"
+else
+  echo "    ✅ Firmware already present"
+fi
+
+cat >> /etc/udev/rules.d/99-hp-p1005.rules <<'EOF'
+
+# Auto-load firmware cuando se detecta la impresora
+SUBSYSTEM=="usb", ATTR{idVendor}=="03f0", ATTR{idProduct}=="3d17", \
+  ACTION=="add", \
+  RUN+="/bin/bash -c '/usr/bin/foo2zjs-loadfw HP1005 /dev/%E{DEVNAME} < /opt/printer-firmware/sihp1005.dl 2>/dev/null || true'"
+EOF
+
+# Instalar foo2zjs-loadfw si no existe
+if ! command -v foo2zjs-loadfw >/dev/null 2>&1; then
+  apt-get install -y printer-driver-foo2zjs-common || echo "    ⚠️  foo2zjs tools not available"
+fi
+
+udevadm control --reload-rules
+udevadm trigger --subsystem-match=usb
+echo "    ✅ HP P1005 firmware auto-load enabled (udev + preload)"
+
 # ------------------------------------------------------------------------------
 # PHASE 1.5: K3s INSTALL & CONFIGURATION
 # ------------------------------------------------------------------------------
