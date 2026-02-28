@@ -117,9 +117,10 @@ fi
 echo -e "\n${GREEN}--> [1.2/5] Preparing kernel & storage (Longhorn & Printing)...${NC}"
 
 # Kernel params for k8s / routing
-cat >/etc/sysctl.d/99-k8s.conf <<EOF
-net.ipv4.ip_forward=1
-vm.overcommit_memory=1
+cat >/etc/sysctl.d/99-k8s.conf <<'EOF'
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
 EOF
 sysctl --system > /dev/null
 
@@ -127,58 +128,122 @@ sysctl --system > /dev/null
 modprobe iscsi_tcp 2>/dev/null || true
 echo "iscsi_tcp" >/etc/modules-load.d/iscsi.conf
 
-# Ensure printer modules load (USB Printing)
-modprobe usblp 2>/dev/null || true
-echo "usblp" >/etc/modules-load.d/printer.conf
+echo " 📦 Installing foo2zjs (firmware loader for HP P1005)..."
+apt-get install -y printer-driver-foo2zjs-common || {
+  echo -e "${RED}❌ FATAL: printer-driver-foo2zjs-common failed to install. Aborting.${NC}"
+  exit 1
+}
+echo " ✅ foo2zjs installed: $(which foo2zjs-loadfw)"
 
-systemctl enable --now iscsid 2>/dev/null || true
+echo " 🔧 Blacklisting usblp (conflicts with CUPS pod libusb access)..."
+echo "blacklist usblp" > /etc/modprobe.d/blacklist-usblp.conf
+rm -f /etc/modules-load.d/printer.conf
+rmmod usblp 2>/dev/null && echo " ✅ usblp unloaded" || echo " ✅ usblp was not loaded"
 
-# stop avahi-daemon
-echo "    🔧 Masking host avahi-daemon (conflicts with cups-avahi pod)..."
+echo " 🔧 Masking host avahi-daemon (conflicts with cups-avahi pod)..."
 systemctl stop avahi-daemon.socket avahi-daemon 2>/dev/null || true
 systemctl disable avahi-daemon.socket avahi-daemon 2>/dev/null || true
 systemctl mask avahi-daemon.socket avahi-daemon 2>/dev/null || true
-echo "    ✅ avahi-daemon masked (mDNS handled by cups-avahi pod)"
+echo " ✅ avahi-daemon masked (mDNS handled by cups-avahi pod)"
 
-# HP P1005: disable USB autosuspend
-cat > /etc/udev/rules.d/99-hp-p1005.rules <<'EOF'
-SUBSYSTEM=="usb", ATTR{idVendor}=="03f0", ATTR{idProduct}=="3d17", \
-  ATTR{power/control}="on", \
-  ATTR{power/autosuspend_delay_ms}="-1"
-EOF
-udevadm control --reload-rules
-udevadm trigger --subsystem-match=usb 2>/dev/null || true
-echo "    ✅ HP P1005 USB autosuspend disabled (udev rule applied)"
-
-# HP P1005: preload firmware y cargar en hotplug
-echo "    📥 Preloading HP P1005 firmware..."
+echo " 📥 Downloading HP P1005 firmware..."
 mkdir -p /opt/printer-firmware
-cd /opt/printer-firmware
 
-if [ ! -f sihp1005.dl ]; then
-  wget -q http://foo2zjs.rkkda.com/firmware/sihp1005.dl \
-    && echo "    ✅ Firmware downloaded" \
-    || echo "    ⚠️  Firmware download failed"
+if [ ! -f /opt/printer-firmware/sihp1005.dl ] || \
+   [ "$(stat -c%s /opt/printer-firmware/sihp1005.dl 2>/dev/null || echo 0)" -lt 100000 ]; then
+  wget -O /opt/printer-firmware/sihp1005.dl \
+    http://foo2zjs.rkkda.com/firmware/sihp1005.dl 2>&1 || {
+    echo -e "${RED}❌ FATAL: Could not download sihp1005.dl. Aborting.${NC}"
+    echo -e "${YELLOW}   Tip: descárgalo manualmente → /opt/printer-firmware/sihp1005.dl${NC}"
+    exit 1
+  }
+  FWSIZE=$(stat -c%s /opt/printer-firmware/sihp1005.dl)
+  if [ "$FWSIZE" -lt 100000 ]; then
+    echo -e "${RED}❌ FATAL: Firmware demasiado pequeño (${FWSIZE} bytes) — probablemente página de error.${NC}"
+    rm -f /opt/printer-firmware/sihp1005.dl
+    exit 1
+  fi
+  echo " ✅ Firmware downloaded ($(du -h /opt/printer-firmware/sihp1005.dl | cut -f1))"
 else
-  echo "    ✅ Firmware already present"
+  echo " ✅ Firmware already present ($(du -h /opt/printer-firmware/sihp1005.dl | cut -f1))"
 fi
 
-cat >> /etc/udev/rules.d/99-hp-p1005.rules <<'EOF'
+echo " 🔧 Writing udev rules for HP P1005..."
+cat > /etc/udev/rules.d/99-hp-p1005.rules <<'EOF'
+# HP LaserJet P1005 — disable USB autosuspend
+SUBSYSTEM=="usb", ATTR{idVendor}=="03f0", ATTR{idProduct}=="3d17", ATTR{power/control}="on", ATTR{power/autosuspend_delay_ms}="-1"
 
-# Auto-load firmware cuando se detecta la impresora
-SUBSYSTEM=="usb", ATTR{idVendor}=="03f0", ATTR{idProduct}=="3d17", \
-  ACTION=="add", \
-  RUN+="/bin/bash -c '/usr/bin/foo2zjs-loadfw HP1005 /dev/%E{DEVNAME} < /opt/printer-firmware/sihp1005.dl 2>/dev/null || true'"
+# HP LaserJet P1005 — auto-load firmware on hotplug (BUSNUM/DEVNUM, not DEVNAME)
+SUBSYSTEM=="usb", ATTR{idVendor}=="03f0", ATTR{idProduct}=="3d17", ACTION=="add", RUN+="/usr/local/bin/hp-p1005-firmware.sh"
+EOF
+udevadm control --reload-rules
+echo " ✅ udev rules written and reloaded"
+
+echo " 🔧 Writing /usr/local/bin/hp-p1005-firmware.sh..."
+cat > /usr/local/bin/hp-p1005-firmware.sh <<'EOF'
+#!/bin/bash
+# HP LaserJet P1005 — firmware loader
+# Llamado por udev (ACTION==add) y por hp-p1005-firmware.service (boot)
+LOG=/var/log/hp-p1005-firmware.log
+FW=/opt/printer-firmware/sihp1005.dl
+LOADER=/usr/bin/foo2zjs-loadfw
+
+# Modo udev: variables BUSNUM/DEVNUM inyectadas por udev
+if [ -n "$BUSNUM" ] && [ -n "$DEVNUM" ]; then
+  DEV_PATH="/dev/bus/usb/$BUSNUM/$DEVNUM"
+  echo "$(date) [udev] Loading firmware to $DEV_PATH" >> "$LOG"
+  "$LOADER" HP1005 "$DEV_PATH" < "$FW" >> "$LOG" 2>&1 \
+    && echo "$(date) [udev] Firmware loaded OK" >> "$LOG" \
+    || echo "$(date) [udev] Firmware load FAILED" >> "$LOG"
+  exit 0
+fi
+
+# Modo boot service: buscar la impresora en el bus
+DEV=$(grep -rl "03f0" /sys/bus/usb/devices/*/idVendor 2>/dev/null | head -1 || true)
+if [ -z "$DEV" ]; then
+  echo "$(date) [boot] HP P1005 not found on USB bus, skipping" >> "$LOG"
+  exit 0
+fi
+DEVDIR=$(dirname "$DEV")
+BUSNUM_VAL=$(printf "%03d" "$(cat "$DEVDIR/busnum")")
+DEVNUM_VAL=$(printf "%03d" "$(cat "$DEVDIR/devnum")")
+DEV_PATH="/dev/bus/usb/$BUSNUM_VAL/$DEVNUM_VAL"
+echo "$(date) [boot] Loading firmware to $DEV_PATH" >> "$LOG"
+"$LOADER" HP1005 "$DEV_PATH" < "$FW" >> "$LOG" 2>&1 \
+  && echo "$(date) [boot] Firmware loaded OK" >> "$LOG" \
+  || echo "$(date) [boot] Firmware load FAILED (printer may need replug)" >> "$LOG"
+EOF
+chmod +x /usr/local/bin/hp-p1005-firmware.sh
+echo " ✅ /usr/local/bin/hp-p1005-firmware.sh written"
+
+
+echo " 🔧 Creating hp-p1005-firmware.service (boot firmware loader)..."
+cat > /etc/systemd/system/hp-p1005-firmware.service <<'EOF'
+[Unit]
+Description=HP LaserJet P1005 — Load USB firmware at boot
+After=systemd-udevd.service
+Before=k3s.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+SuccessExitStatus=0 1
+ExecStart=/usr/local/bin/hp-p1005-firmware.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
 EOF
 
-if ! command -v foo2zjs-loadfw >/dev/null 2>&1; then
-  apt-get install -y printer-driver-foo2zjs-common || echo "    ⚠️  foo2zjs tools not available"
-fi
+systemctl daemon-reload
+systemctl enable hp-p1005-firmware.service
+echo " ✅ hp-p1005-firmware.service enabled (Before=k3s)"
 
-udevadm control --reload-rules
-udevadm trigger --subsystem-match=usb
-echo "    ✅ HP P1005 firmware auto-load enabled (udev + preload)"
-cd "$REPO_ROOT" || { echo -e "${RED}Error: Could not return to repo root.${NC}"; exit 1; }
+udevadm trigger --subsystem-match=usb --action=add 2>/dev/null || true
+echo " ✅ HP P1005 firmware setup complete"
+
+systemctl enable --now iscsid 2>/dev/null || true
 
 # ------------------------------------------------------------------------------
 # PHASE 1.5: K3s INSTALL & CONFIGURATION
@@ -186,17 +251,16 @@ cd "$REPO_ROOT" || { echo -e "${RED}Error: Could not return to repo root.${NC}";
 echo -e "\n${GREEN}--> [K3s] Synchronizing Engine Configuration...${NC}"
 
 if ! command -v k3s &> /dev/null; then
-    echo "    - Installing K3s..."
-    curl -sfL https://get.k3s.io | sh -
-    mkdir -p $REAL_HOME/.kube
-    cp /etc/rancher/k3s/k3s.yaml $REAL_HOME/.kube/config
-    chown $REAL_USER:$REAL_USER $REAL_HOME/.kube/config
-    echo "export KUBECONFIG=$REAL_HOME/.kube/config" >> $REAL_HOME/.bashrc
+  echo "    - Installing K3s..."
+  curl -sfL https://get.k3s.io | sh -
+  mkdir -p "$REAL_HOME/.kube"
+  cp /etc/rancher/k3s/k3s.yaml "$REAL_HOME/.kube/config"
+  chown "$REAL_USER:$REAL_USER" "$REAL_HOME/.kube/config"
+  echo "export KUBECONFIG=$REAL_HOME/.kube/config" >> "$REAL_HOME/.bashrc"
 else
-    echo "    - K3s already installed."
+  echo "    - K3s already installed."
 fi
 
-# Ensure kubectl available
 if [ ! -f /usr/local/bin/kubectl ]; then
   ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
 fi
@@ -208,9 +272,22 @@ disable:
   - servicelb
 EOF
 
-echo " - Deploying flannel bootstrap service..."
+cat > /usr/local/bin/k3s-flannel-bootstrap.sh <<'EOF'
+#!/bin/bash
+mkdir -p /run/flannel
+CACHE=/var/lib/rancher/k3s/agent/etc/flannel/subnet.env
+if [ -f "$CACHE" ]; then
+  cp "$CACHE" /run/flannel/subnet.env
+  echo "flannel-bootstrap: subnet.env restored from cache"
+else
+  printf "FLANNEL_NETWORK=10.42.0.0/16\nFLANNEL_SUBNET=10.42.0.1/24\nFLANNEL_MTU=1450\nFLANNEL_IPMASQ=true\n" \
+    > /run/flannel/subnet.env
+  echo "flannel-bootstrap: subnet.env created from defaults (no cache yet)"
+fi
+EOF
+chmod +x /usr/local/bin/k3s-flannel-bootstrap.sh
 
-cat > /etc/systemd/system/k3s-flannel-bootstrap.service << 'EOF'
+cat > /etc/systemd/system/k3s-flannel-bootstrap.service <<'EOF'
 [Unit]
 Description=K3s Flannel subnet.env bootstrap
 Before=k3s.service
@@ -219,23 +296,30 @@ After=network.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/bash -c '\
-  mkdir -p /run/flannel; \
-  cache=/var/lib/rancher/k3s/agent/etc/flannel/subnet.env; \
-  if [ -f "$cache" ]; then \
-    cp "$cache" /run/flannel/subnet.env; \
-    echo "flannel-bootstrap: subnet.env restored from cache"; \
-  else \
-    printf "FLANNEL_NETWORK=10.42.0.0/16\nFLANNEL_SUBNET=10.42.0.1/24\nFLANNEL_MTU=1450\nFLANNEL_IPMASQ=true\n" \
-      > /run/flannel/subnet.env; \
-    echo "flannel-bootstrap: subnet.env created from defaults (no cache yet)"; \
-  fi'
+ExecStart=/usr/local/bin/k3s-flannel-bootstrap.sh
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-cat > /etc/systemd/system/k3s-flannel-cache.service << 'EOF'
+cat > /usr/local/bin/k3s-flannel-cache.sh <<'EOF'
+#!/bin/bash
+i=0
+while [ $i -lt 30 ]; do
+  if [ -s /run/flannel/subnet.env ]; then
+    mkdir -p /var/lib/rancher/k3s/agent/etc/flannel/
+    cp /run/flannel/subnet.env /var/lib/rancher/k3s/agent/etc/flannel/subnet.env
+    echo "flannel-cache: updated ($(grep FLANNEL_SUBNET /run/flannel/subnet.env))"
+    exit 0
+  fi
+  sleep 2
+  i=$((i+1))
+done
+echo "flannel-cache: timeout — keeping existing cache"
+EOF
+chmod +x /usr/local/bin/k3s-flannel-cache.sh
+
+cat > /etc/systemd/system/k3s-flannel-cache.service <<'EOF'
 [Unit]
 Description=K3s Flannel subnet.env cache updater
 After=k3s.service
@@ -244,25 +328,14 @@ Requires=k3s.service
 [Service]
 Type=oneshot
 RemainAfterExit=no
-ExecStart=/bin/bash -c '\
-  i=0; \
-  while [ $i -lt 30 ]; do \
-    if [ -s /run/flannel/subnet.env ]; then \
-      mkdir -p /var/lib/rancher/k3s/agent/etc/flannel/; \
-      cp /run/flannel/subnet.env /var/lib/rancher/k3s/agent/etc/flannel/subnet.env; \
-      echo "flannel-cache: updated ($(grep FLANNEL_SUBNET /run/flannel/subnet.env))"; \
-      exit 0; \
-    fi; \
-    sleep 2; i=$((i+1)); \
-  done; \
-  echo "flannel-cache: timeout — keeping existing cache"'
+ExecStart=/usr/local/bin/k3s-flannel-cache.sh
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 mkdir -p /etc/systemd/system/k3s.service.d
-cat > /etc/systemd/system/k3s.service.d/flannel-wait.conf << 'EOF'
+cat > /etc/systemd/system/k3s.service.d/flannel-wait.conf <<'EOF'
 [Unit]
 After=k3s-flannel-bootstrap.service
 Requires=k3s-flannel-bootstrap.service
@@ -271,11 +344,10 @@ EOF
 systemctl daemon-reload
 systemctl enable k3s-flannel-bootstrap.service k3s-flannel-cache.service 2>/dev/null || true
 echo "    ✅ k3s-flannel-bootstrap.service enabled (Before=k3s)"
-echo "    ✅ k3s-flannel-cache.service enabled (After=k3s, 60s timeout)"
+echo "    ✅ k3s-flannel-cache.service enabled (After=k3s)"
 
 echo " - Deploying Unknown pod cleanup service..."
-
-cat > /usr/local/bin/k3s-cleanup-unknown-pods.sh << 'EOF'
+cat > /usr/local/bin/k3s-cleanup-unknown-pods.sh <<'EOF'
 #!/bin/bash
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 until kubectl get nodes &>/dev/null; do sleep 5; done
@@ -294,7 +366,7 @@ fi
 EOF
 chmod +x /usr/local/bin/k3s-cleanup-unknown-pods.sh
 
-cat > /etc/systemd/system/k3s-pod-cleanup.service << 'EOF'
+cat > /etc/systemd/system/k3s-pod-cleanup.service <<'EOF'
 [Unit]
 Description=K3s Unknown Pod Cleanup
 After=k3s.service
@@ -325,9 +397,12 @@ fi
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 if command -v kubectl &> /dev/null && [ -f /etc/rancher/k3s/k3s.yaml ]; then
-  kubectl delete daemonset -n kube-system -l svccontroller.k3s.cattle.io/svcname=pihole-dns --ignore-not-found=true 2>/dev/null
-  kubectl delete daemonset -n kube-system -l svccontroller.k3s.cattle.io/svcname=pihole-web --ignore-not-found=true 2>/dev/null
-  kubectl delete daemonset -n kube-system -l svccontroller.k3s.cattle.io/svcname=traefik --ignore-not-found=true 2>/dev/null
+  kubectl delete daemonset -n kube-system \
+    -l svccontroller.k3s.cattle.io/svcname=pihole-dns --ignore-not-found=true 2>/dev/null
+  kubectl delete daemonset -n kube-system \
+    -l svccontroller.k3s.cattle.io/svcname=pihole-web --ignore-not-found=true 2>/dev/null
+  kubectl delete daemonset -n kube-system \
+    -l svccontroller.k3s.cattle.io/svcname=traefik --ignore-not-found=true 2>/dev/null
 fi
 
 # ------------------------------------------------------------------------------
