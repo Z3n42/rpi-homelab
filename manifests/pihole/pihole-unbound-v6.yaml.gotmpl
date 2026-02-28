@@ -66,17 +66,6 @@ resources:
         updateFrequency = 7
 
   - apiVersion: v1
-    kind: ConfigMap
-    metadata:
-      name: pihole-custom-dns
-      namespace: pihole
-    data:
-      custom.list: |
-        192.168.1.50 traefik.lan
-        192.168.1.50 cups.lan
-        192.168.1.50 homebridge.lan
-
-  - apiVersion: v1
     kind: PersistentVolumeClaim
     metadata:
       name: pihole-pvc-v6
@@ -111,34 +100,32 @@ resources:
                 - -c
                 - |
                   set -e
-                  
-                  echo "=================================================="
+
                   echo "Pi-hole v6 TOML Mode - PVC Initialization"
-                  echo "=================================================="
-                  
+
                   if [ -d /etc/pihole ]; then
                     ls -lah /etc/pihole/ 2>/dev/null || echo "  (empty)"
                   else
                     mkdir -p /etc/pihole
                   fi
-                  
+
                   if [ ! -f /tmp/source/pihole.toml ]; then
                     echo "ERROR: ConfigMap not mounted"
                     exit 1
                   fi
-                  
+
                   LEGACY_FILES="dnsmasq.conf setupVars.conf pihole-FTL.conf"
                   for file in $LEGACY_FILES; do
                     rm -f "/etc/pihole/$file"
                   done
                   rm -f /etc/pihole/*.conf.bak 2>/dev/null || true
-                  
+
                   mkdir -p /etc/dnsmasq.d
                   rm -rf /etc/dnsmasq.d/*
-                  
+
                   cp /tmp/source/pihole.toml /etc/pihole/pihole.toml
                   chmod 644 /etc/pihole/pihole.toml
-                  
+
                   echo "✅ Init completed"
                   cat /etc/pihole/pihole.toml
               volumeMounts:
@@ -217,10 +204,6 @@ resources:
                   mountPath: /etc/dnsmasq.d
                 - name: pihole-logs
                   mountPath: /var/log/pihole
-                - name: custom-dns
-                  mountPath: /etc/pihole/custom.list
-                  subPath: custom.list
-                  readOnly: true
               readinessProbe:
                 tcpSocket:
                   port: 80
@@ -276,20 +259,13 @@ resources:
             - name: pihole-storage
               persistentVolumeClaim:
                 claimName: pihole-pvc-v6
-
             - name: dnsmasq-storage
               emptyDir: {}
-
             - name: pihole-logs
               emptyDir: {}
-
             - name: unbound-conf
               configMap:
                 name: unbound-config
-
-            - name: custom-dns
-              configMap:
-                name: pihole-custom-dns
 
   - apiVersion: v1
     kind: Service
@@ -424,6 +400,64 @@ resources:
 
                   curl -sf -X POST "$BASE/api/gravity" -H "sid: $TOKEN"
                   echo "✅ Gravity update triggered"
+
+  - apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: pihole-customdns-seed
+      namespace: pihole
+    spec:
+      ttlSecondsAfterFinished: 300
+      backoffLimit: 3
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: seed-customdns
+              image: curlimages/curl:latest
+              env:
+                - name: PIHOLE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: pihole-web-password
+                      key: password
+              command:
+                - sh
+                - -c
+                - |
+                  BASE="http://pihole-web.pihole.svc.cluster.local"
+
+                  until curl -sf "$BASE/api/auth" > /dev/null 2>&1; do
+                    echo "Waiting for Pihole API..."
+                    sleep 5
+                  done
+
+                  TOKEN=$(curl -sf -X POST "$BASE/api/auth" \
+                    -H "Content-Type: application/json" \
+                    -d '{"password":"'"$PIHOLE_PASSWORD"'"}' \
+                    | grep -o '"sid":"[^"]*"' | cut -d'"' -f4)
+
+                  COUNT=$(curl -sf "$BASE/api/customdns" \
+                    -H "sid: $TOKEN" \
+                    | grep -o '"domain"' | wc -l)
+
+                  if [ "$COUNT" -gt 0 ]; then
+                    echo "✅ Already has $COUNT custom DNS records, skipping"
+                    exit 0
+                  fi
+
+                  for ENTRY in \
+                    "traefik.lan|192.168.1.50" \
+                    "cups.lan|192.168.1.50" \
+                    "homebridge.lan|192.168.1.50"; do
+                    DOMAIN=$(echo "$ENTRY" | cut -d'|' -f1)
+                    IP=$(echo "$ENTRY" | cut -d'|' -f2)
+                    curl -sf -X POST "$BASE/api/customdns" \
+                      -H "Content-Type: application/json" \
+                      -H "sid: $TOKEN" \
+                      -d '{"domain":"'"$DOMAIN"'","ip":"'"$IP"'"}' \
+                      && echo "✅ $DOMAIN → $IP" || echo "⚠️ Failed: $DOMAIN"
+                  done
 
   - apiVersion: traefik.io/v1alpha1
     kind: Middleware
