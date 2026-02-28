@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: cups-config
-  namespace: printing
-data:
-  cupsd.conf: |
-    {{ readFile "manifests/cups/cupsd.conf" | indent 4 }}

@@ -340,7 +340,7 @@ releases:
                 Listen 0.0.0.0:631
                 ServerAlias *
                 WebInterface Yes
-                LogLevel debug
+                LogLevel warn
                 MaxLogSize 0
 
                 DefaultAuthType Basic

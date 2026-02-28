@@ -143,8 +143,12 @@ SUBSYSTEM=usb /lib/udev/hpljP1005 \
   || echo "$(date) Firmware load skipped/failed" >> /var/log/cups-pod-restart.log
 
 sleep 3
-/usr/local/bin/kubectl rollout restart deployment/cups -n printing \
-  >> /var/log/cups-pod-restart.log 2>&1
+
+until /usr/local/bin/kubectl rollout restart deployment/cups -n printing \
+  >> /var/log/cups-pod-restart.log 2>&1; do
+  echo "$(date) k3s API not ready, retrying in 5s..." >> /var/log/cups-pod-restart.log
+  sleep 5
+done
 echo "$(date) CUPS pod restarted" >> /var/log/cups-pod-restart.log
 EOF
 sudo chmod +x /usr/local/bin/restart-cups-pod.sh
