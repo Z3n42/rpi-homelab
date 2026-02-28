@@ -425,7 +425,6 @@ releases:
 
                     addgroup lpadmin 2>/dev/null || echo "ℹ️  Group lpadmin already exists"
                     addgroup sys 2>/dev/null || echo "ℹ️  Group sys already exists"
-                    
                     adduser ${CUPS_ADMIN_USER} lpadmin 2>/dev/null || echo "ℹ️  User already in lpadmin"
                     adduser ${CUPS_ADMIN_USER} sys 2>/dev/null || echo "ℹ️  User already in sys"
 
@@ -460,9 +459,6 @@ releases:
                       < /usr/share/foo2zjs/firmware/sihp1005.dl \
                       && echo "✅ Firmware loaded OK" \
                       || echo "⚠️  Firmware load failed (printer may need replug)"
-                volumeMounts:
-                  - name: usb
-                    mountPath: /dev/bus/usb
             pod:
               dnsPolicy: ClusterFirst
             containers:
@@ -659,10 +655,9 @@ releases:
 
                     echo "✅ AirPrint service files mounted from ConfigMap"
                     ls -lh /etc/avahi/services/
-
                     echo "✅ Starting Avahi daemon for mDNS broadcasting..."
                     exec avahi-daemon --no-chroot --debug
-      
+                    # ← CHANGED: eliminado bloque "Configuration summary" — causaba rollout innecesario
       - persistence:
           avahi-services:
             enabled: true
