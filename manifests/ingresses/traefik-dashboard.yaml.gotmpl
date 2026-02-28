@@ -15,6 +15,7 @@ spec:
           kind: TraefikService
       middlewares:
         - name: redirect-to-dashboard
+          namespace: traefik-system 
     - match: Host(`traefik.{{ index .Values "network" "domain" }}`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))
       kind: Rule
       services:
