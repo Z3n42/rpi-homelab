@@ -335,7 +335,7 @@ resources:
                 - |
                   BASE="http://pihole-web.pihole.svc.cluster.local"
 
-                  until curl -sf "$BASE/api/auth" > /dev/null 2>&1; do
+                  until curl -s "$BASE/api/auth" > /dev/null 2>&1; do
                     echo "Waiting for Pihole API..."
                     sleep 5
                   done
@@ -427,7 +427,7 @@ resources:
                 - |
                   BASE="http://pihole-web.pihole.svc.cluster.local"
 
-                  until curl -sf "$BASE/api/auth" > /dev/null 2>&1; do
+                  until curl -s "$BASE/api/auth" > /dev/null 2>&1; do
                     echo "Waiting for Pihole API..."
                     sleep 5
                   done
