@@ -657,7 +657,6 @@ releases:
                     ls -lh /etc/avahi/services/
                     echo "✅ Starting Avahi daemon for mDNS broadcasting..."
                     exec avahi-daemon --no-chroot --debug
-                    # ← CHANGED: eliminado bloque "Configuration summary" — causaba rollout innecesario
       - persistence:
           avahi-services:
             enabled: true
