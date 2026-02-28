@@ -130,7 +130,9 @@ releases:
           - "--entryPoints.websecure.address=:8443"
           - "--entryPoints.websecure.http.tls=true"
           - "--entryPoints.cups.address=:631"
-          - "--providers.kubernetescrd.allowCrossNamespaceDependencies=true"
+      - providers:
+          kubernetesCRD:
+            allowCrossNamespacesDependencies: true
       - ports:
           web:
             port: 8000
