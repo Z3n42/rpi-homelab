@@ -55,9 +55,6 @@ resources:
         dnssec = true
         listeningMode = "all"
 
-        [dns.hosts]
-        "192.168.1.50" = ["traefik.lan", "cups.lan", "homebridge.lan"]
-
         [webserver]
         port = 80
 
@@ -66,7 +63,18 @@ resources:
         DBinterval = 60.0
 
         [gravity]
-        updateFrequency = 7 
+        updateFrequency = 7
+
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: pihole-custom-dns
+      namespace: pihole
+    data:
+      custom.list: |
+        192.168.1.50 traefik.lan
+        192.168.1.50 cups.lan
+        192.168.1.50 homebridge.lan
 
   - apiVersion: v1
     kind: PersistentVolumeClaim
@@ -81,7 +89,6 @@ resources:
         requests:
           storage: 2Gi
 
-  # Critical initialization Job - must run BEFORE Deployment
   - apiVersion: batch/v1
     kind: Job
     metadata:
@@ -108,85 +115,32 @@ resources:
                   echo "=================================================="
                   echo "Pi-hole v6 TOML Mode - PVC Initialization"
                   echo "=================================================="
-                  echo ""
                   
-                  echo "STEP 1: Verify initial PVC state"
-                  echo "-------------------------------------------"
                   if [ -d /etc/pihole ]; then
-                    echo "/etc/pihole contents:"
-                    ls -lah /etc/pihole/ 2>/dev/null || echo "  (empty or inaccessible)"
+                    ls -lah /etc/pihole/ 2>/dev/null || echo "  (empty)"
                   else
-                    echo "WARNING: /etc/pihole does not exist, creating..."
                     mkdir -p /etc/pihole
                   fi
-                  echo ""
                   
-                  echo "STEP 2: Verify mounted ConfigMap"
-                  echo "---------------------------------------"
-                  if [ -f /tmp/source/pihole.toml ]; then
-                    echo "ConfigMap mounted correctly at /tmp/source/"
-                    echo "pihole.toml contents:"
-                    cat /tmp/source/pihole.toml
-                  else
-                    echo "ERROR: /tmp/source/pihole.toml DOES NOT EXIST"
-                    echo "ConfigMap was not mounted properly"
+                  if [ ! -f /tmp/source/pihole.toml ]; then
+                    echo "ERROR: ConfigMap not mounted"
                     exit 1
                   fi
-                  echo ""
                   
-                  echo "STEP 3: Remove legacy files"
-                  echo "-------------------------------------"
                   LEGACY_FILES="dnsmasq.conf setupVars.conf pihole-FTL.conf"
                   for file in $LEGACY_FILES; do
-                    if [ -f "/etc/pihole/$file" ]; then
-                      echo "  Removing: $file"
-                      rm -f "/etc/pihole/$file"
-                    else
-                      echo "  Not found: $file"
-                    fi
+                    rm -f "/etc/pihole/$file"
                   done
+                  rm -f /etc/pihole/*.conf.bak 2>/dev/null || true
                   
-                  # Remove old backups
-                  if ls /etc/pihole/*.conf.bak 1> /dev/null 2>&1; then
-                    echo "  Removing: *.conf.bak files"
-                    rm -f /etc/pihole/*.conf.bak
-                  fi
-                  echo ""
+                  mkdir -p /etc/dnsmasq.d
+                  rm -rf /etc/dnsmasq.d/*
                   
-                  echo "STEP 4: Clean /etc/dnsmasq.d"
-                  echo "----------------------------------"
-                  if [ -d /etc/dnsmasq.d ]; then
-                    rm -rf /etc/dnsmasq.d/*
-                    echo "  /etc/dnsmasq.d cleaned"
-                  else
-                    mkdir -p /etc/dnsmasq.d
-                    echo "  /etc/dnsmasq.d created"
-                  fi
-                  echo ""
-                  
-                  echo "STEP 5: Copy pihole.toml"
-                  echo "------------------------------"
                   cp /tmp/source/pihole.toml /etc/pihole/pihole.toml
                   chmod 644 /etc/pihole/pihole.toml
-                  echo "  pihole.toml copied and permissions set"
-                  echo ""
                   
-                  echo "STEP 6: Final verification"
-                  echo "------------------------------"
-                  echo "Final /etc/pihole contents:"
-                  ls -lah /etc/pihole/
-                  echo ""
-                  
-                  echo "Installed pihole.toml contents:"
+                  echo "✅ Init completed"
                   cat /etc/pihole/pihole.toml
-                  echo ""
-                  
-                  echo "=================================================="
-                  echo "INITIALIZATION COMPLETED"
-                  echo "=================================================="
-                  echo "PVC is ready for Pi-hole v6 in TOML mode"
-                  echo "No legacy files present to force dnsmasq mode"
-                  echo "=================================================="
               volumeMounts:
                 - name: pihole-storage
                   mountPath: /etc/pihole
@@ -263,6 +217,10 @@ resources:
                   mountPath: /etc/dnsmasq.d
                 - name: pihole-logs
                   mountPath: /var/log/pihole
+                - name: custom-dns
+                  mountPath: /etc/pihole/custom.list
+                  subPath: custom.list
+                  readOnly: true
               readinessProbe:
                 tcpSocket:
                   port: 80
@@ -328,6 +286,10 @@ resources:
             - name: unbound-conf
               configMap:
                 name: unbound-config
+
+            - name: custom-dns
+              configMap:
+                name: pihole-custom-dns
 
   - apiVersion: v1
     kind: Service
