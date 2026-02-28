@@ -395,7 +395,7 @@ resources:
                 - sh
                 - -c
                 - |
-                  BASE="http://pihole-web.pihole.svc"
+                  BASE="http://pihole-web.pihole.svc.cluster.local"
 
                   until curl -sf "$BASE/api/auth" > /dev/null 2>&1; do
                     echo "Waiting for Pihole API..."
