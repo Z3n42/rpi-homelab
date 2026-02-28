@@ -300,6 +300,7 @@ releases:
     values:
       - resources:
           - {{ tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") . | indent 12 | trim }}
+          - {{ tpl (readFile "manifests/ingresses/traefik-dashboard-redirect.yaml.gotmpl") . | indent 12 | trim }}
           - {{ tpl (readFile "manifests/ingresses/cups-ingress.yaml.gotmpl") . | indent 12 | trim }}
           - {{ tpl (readFile "manifests/ingresses/homebridge-ingress.yaml.gotmpl") . | indent 12 | trim }}
 
