@@ -133,15 +133,22 @@ rm -f /etc/modules-load.d/printer.conf
 rmmod usblp 2>/dev/null && echo " ✅ usblp unloaded" || echo " ✅ usblp was not loaded"
 
 # CUPS reconnect
-cat > /usr/local/bin/restart-cups-pod.sh <<'EOF'
+sudo tee /usr/local/bin/restart-cups-pod.sh <<'EOF'
 #!/bin/bash
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-sleep 2
+sleep 1
+
+SUBSYSTEM=usb /lib/udev/hpljP1005 \
+  && echo "$(date) Firmware loaded OK" >> /var/log/cups-pod-restart.log \
+  || echo "$(date) Firmware load skipped/failed" >> /var/log/cups-pod-restart.log
+
+sleep 3
 /usr/local/bin/kubectl rollout restart deployment/cups -n printing \
   >> /var/log/cups-pod-restart.log 2>&1
-echo "$(date) CUPS pod restarted due to printer hotplug" >> /var/log/cups-pod-restart.log
+echo "$(date) CUPS pod restarted" >> /var/log/cups-pod-restart.log
 EOF
-chmod +x /usr/local/bin/restart-cups-pod.sh
+sudo chmod +x /usr/local/bin/restart-cups-pod.sh
+
 
 # Udev: autosuspend off + hotplug restart CUPS pod
 cat > /etc/udev/rules.d/99-hp-p1005.rules <<'EOF'

@@ -445,47 +445,14 @@ releases:
                   - sh
                   - -c
                   - |
-                    echo "🖨️  Loading HP P1005 firmware..."
+                    echo "🖨️  Checking HP P1005 USB presence..."
                     DEV=$(grep -rl "03f0" /sys/bus/usb/devices/*/idVendor 2>/dev/null | head -1 || true)
                     if [ -z "$DEV" ]; then
                       echo "⚠️  HP P1005 not found on USB bus, skipping"
-                      exit 0
-                    fi
-
-                    FW=/etc/cups/sihp1005.dl
-                    if [ ! -f "$FW" ] || [ "$(stat -c%s "$FW" 2>/dev/null || echo 0)" -lt 100000 ]; then
-                      echo "📥 Downloading and converting firmware..."
-                      apt-get update -qq 2>/dev/null
-                      apt-get install -y -qq foo2zjs 2>/dev/null || true
-
-                      cd /tmp
-                      if command -v getweb >/dev/null 2>&1; then
-                        getweb P1005 2>/dev/null || true
-                      fi
-
-                      if [ -f /tmp/sihpP1005.img ]; then
-                        echo "🔄 Converting sihpP1005.img → sihp1005.dl..."
-                        arm2hpdl < /tmp/sihpP1005.img > "$FW"
-                        echo "✅ Firmware cached ($(du -h "$FW" | cut -f1))"
-                      elif [ -f /usr/share/foo2zjs/firmware/sihpP1005.img ]; then
-                        arm2hpdl < /usr/share/foo2zjs/firmware/sihpP1005.img > "$FW"
-                        echo "✅ Firmware cached from share ($(du -h "$FW" | cut -f1))"
-                      else
-                        echo "❌ sihpP1005.img not found after getweb"
-                        exit 0
-                      fi
                     else
-                      echo "✅ Firmware already cached ($(du -h "$FW" | cut -f1))"
+                      echo "✅ HP P1005 found at $(dirname $DEV)"
+                      echo "ℹ️  Firmware loaded by host udev (hpljP1005)"
                     fi
-
-                    DEVDIR=$(dirname "$DEV")
-                    BUSNUM=$(printf "%03d" "$(cat "$DEVDIR/busnum")")
-                    DEVNUM=$(printf "%03d" "$(cat "$DEVDIR/devnum")")
-                    echo "Loading firmware to /dev/bus/usb/$BUSNUM/$DEVNUM"
-                    foo2zjs-loadfw HP1005 /dev/bus/usb/$BUSNUM/$DEVNUM \
-                      < "$FW" \
-                      && echo "✅ Firmware loaded OK" \
-                      || echo "⚠️  Firmware load failed"
 
             pod:
               dnsPolicy: ClusterFirst
