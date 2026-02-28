@@ -66,6 +66,17 @@ resources:
         updateFrequency = 7
 
   - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: pihole-custom-hosts
+      namespace: pihole
+    data:
+      custom.hosts: |
+        192.168.1.50 traefik.lan
+        192.168.1.50 cups.lan
+        192.168.1.50 homebridge.lan
+
+  - apiVersion: v1
     kind: PersistentVolumeClaim
     metadata:
       name: pihole-pvc-v6
@@ -204,6 +215,9 @@ resources:
                   mountPath: /etc/dnsmasq.d
                 - name: pihole-logs
                   mountPath: /var/log/pihole
+                - name: custom-hosts
+                  mountPath: /etc/pihole/hosts
+                  readOnly: true
               readinessProbe:
                 tcpSocket:
                   port: 80
@@ -266,6 +280,9 @@ resources:
             - name: unbound-conf
               configMap:
                 name: unbound-config
+            - name: custom-hosts
+              configMap:
+                name: pihole-custom-hosts
 
   - apiVersion: v1
     kind: Service
@@ -401,63 +418,6 @@ resources:
                   curl -sf -X POST "$BASE/api/gravity" -H "sid: $TOKEN"
                   echo "✅ Gravity update triggered"
 
-  - apiVersion: batch/v1
-    kind: Job
-    metadata:
-      name: pihole-customdns-seed
-      namespace: pihole
-    spec:
-      ttlSecondsAfterFinished: 300
-      backoffLimit: 3
-      template:
-        spec:
-          restartPolicy: OnFailure
-          containers:
-            - name: seed-customdns
-              image: curlimages/curl:latest
-              env:
-                - name: PIHOLE_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: pihole-web-password
-                      key: password
-              command:
-                - sh
-                - -c
-                - |
-                  BASE="http://pihole-web.pihole.svc.cluster.local"
-
-                  until curl -s "$BASE/api/auth" > /dev/null 2>&1; do
-                    echo "Waiting for Pihole API..."
-                    sleep 5
-                  done
-
-                  TOKEN=$(curl -sf -X POST "$BASE/api/auth" \
-                    -H "Content-Type: application/json" \
-                    -d '{"password":"'"$PIHOLE_PASSWORD"'"}' \
-                    | grep -o '"sid":"[^"]*"' | cut -d'"' -f4)
-
-                  COUNT=$(curl -sf "$BASE/api/customdns" \
-                    -H "sid: $TOKEN" \
-                    | grep -o '"domain"' | wc -l)
-
-                  if [ "$COUNT" -gt 0 ]; then
-                    echo "✅ Already has $COUNT custom DNS records, skipping"
-                    exit 0
-                  fi
-
-                  for ENTRY in \
-                    "traefik.lan|192.168.1.50" \
-                    "cups.lan|192.168.1.50" \
-                    "homebridge.lan|192.168.1.50"; do
-                    DOMAIN=$(echo "$ENTRY" | cut -d'|' -f1)
-                    IP=$(echo "$ENTRY" | cut -d'|' -f2)
-                    curl -sf -X POST "$BASE/api/customdns" \
-                      -H "Content-Type: application/json" \
-                      -H "sid: $TOKEN" \
-                      -d '{"domain":"'"$DOMAIN"'","ip":"'"$IP"'"}' \
-                      && echo "✅ $DOMAIN → $IP" || echo "⚠️ Failed: $DOMAIN"
-                  done
 
   - apiVersion: traefik.io/v1alpha1
     kind: Middleware
