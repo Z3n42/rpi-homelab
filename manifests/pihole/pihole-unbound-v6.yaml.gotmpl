@@ -54,20 +54,19 @@ resources:
         upstreams = ["127.0.0.1#5335"]
         dnssec = true
         listeningMode = "all"
-        
+
+        [dns.hosts]
+        "192.168.1.50" = ["traefik.lan", "cups.lan", "homebridge.lan"]
+
         [webserver]
         port = 80
 
         [database]
         maxDBdays = 30
         DBinterval = 60.0
-        
-        [adlists]
-        sources = [
-          "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
-          "https://big.oisd.nl",
-          "https://v.firebog.net/hosts/static/w3kbl.txt"
-        ]
+
+        [gravity]
+        updateFrequency = 7 
 
   - apiVersion: v1
     kind: PersistentVolumeClaim
@@ -371,6 +370,98 @@ resources:
         - name: http
           port: 80
           targetPort: 80
+
+  - apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: pihole-adlists-seed
+      namespace: pihole
+    spec:
+      ttlSecondsAfterFinished: 300
+      backoffLimit: 3
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: seed-adlists
+              image: curlimages/curl:latest
+              env:
+                - name: PIHOLE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: pihole-web-password
+                      key: password
+              command:
+                - sh
+                - -c
+                - |
+                  BASE="http://pihole-web.pihole.svc"
+
+                  until curl -sf "$BASE/api/auth" > /dev/null 2>&1; do
+                    echo "Waiting for Pihole API..."
+                    sleep 5
+                  done
+
+                  TOKEN=$(curl -sf -X POST "$BASE/api/auth" \
+                    -H "Content-Type: application/json" \
+                    -d '{"password":"'"$PIHOLE_PASSWORD"'"}' \
+                    | grep -o '"sid":"[^"]*"' | cut -d'"' -f4)
+
+                  COUNT=$(curl -sf "$BASE/api/lists?type=block" \
+                    -H "sid: $TOKEN" \
+                    | grep -o '"address"' | wc -l)
+
+                  if [ "$COUNT" -gt 5 ]; then
+                    echo "✅ Already has $COUNT lists, skipping"
+                    exit 0
+                  fi
+
+                  echo "Seeding $COUNT lists..."
+                  for URL in \
+                    "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts" \
+                    "https://big.oisd.nl" \
+                    "https://v.firebog.net/hosts/static/w3kbl.txt" \
+                    "https://adaway.org/hosts.txt" \
+                    "https://v.firebog.net/hosts/AdguardDNS.txt" \
+                    "https://v.firebog.net/hosts/Admiral.txt" \
+                    "https://v.firebog.net/hosts/Easylist.txt" \
+                    "https://v.firebog.net/hosts/Easyprivacy.txt" \
+                    "https://v.firebog.net/hosts/Prigent-Ads.txt" \
+                    "https://v.firebog.net/hosts/Prigent-Crypto.txt" \
+                    "https://urlhaus.abuse.ch/downloads/hostfile/" \
+                    "https://phishing.army/download/phishing_army_blocklist_extended.txt" \
+                    "https://blocklistproject.github.io/Lists/ads.txt" \
+                    "https://blocklistproject.github.io/Lists/malware.txt" \
+                    "https://blocklistproject.github.io/Lists/phishing.txt" \
+                    "https://blocklistproject.github.io/Lists/tracking.txt" \
+                    "https://blocklistproject.github.io/Lists/abuse.txt" \
+                    "https://blocklistproject.github.io/Lists/ransomware.txt" \
+                    "https://raw.githubusercontent.com/PolishFiltersTeam/KADhosts/master/KADhosts.txt" \
+                    "https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Spam/hosts" \
+                    "https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.2o7Net/hosts" \
+                    "https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Risk/hosts" \
+                    "https://raw.githubusercontent.com/crazy-max/WindowsSpyBlocker/master/data/hosts/spy.txt" \
+                    "https://raw.githubusercontent.com/Spam404/lists/master/main-blacklist.txt" \
+                    "https://raw.githubusercontent.com/anudeepND/blacklist/master/adservers.txt" \
+                    "https://raw.githubusercontent.com/bigdargon/hostsVN/master/hosts" \
+                    "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt" \
+                    "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext" \
+                    "https://blocklistproject.github.io/Lists/scam.txt" \
+                    "https://blocklistproject.github.io/Lists/fraud.txt" \
+                    "https://blocklistproject.github.io/Lists/gambling.txt" \
+                    "https://blocklistproject.github.io/Lists/crypto.txt" \
+                    "https://blocklistproject.github.io/Lists/redirect.txt" \
+                    "https://blocklistproject.github.io/Lists/smart-tv.txt" \
+                    "https://blocklistproject.github.io/Lists/vaping.txt"; do
+                    curl -sf -X POST "$BASE/api/lists" \
+                      -H "Content-Type: application/json" \
+                      -H "sid: $TOKEN" \
+                      -d '{"address":"'"$URL"'","type":"block","enabled":true}' \
+                      && echo "✅ $URL" || echo "⚠️ Failed: $URL"
+                  done
+
+                  curl -sf -X POST "$BASE/api/gravity" -H "sid: $TOKEN"
+                  echo "✅ Gravity update triggered"
 
   - apiVersion: traefik.io/v1alpha1
     kind: Middleware
