@@ -454,19 +454,24 @@ releases:
 
                     FW=/etc/cups/sihp1005.dl
                     if [ ! -f "$FW" ] || [ "$(stat -c%s "$FW" 2>/dev/null || echo 0)" -lt 100000 ]; then
-                      echo "📥 Downloading firmware..."
-                      apt-get update -qq 2>/dev/null          # ← ADDED: sin update falla el install
+                      echo "📥 Downloading and converting firmware..."
+                      apt-get update -qq 2>/dev/null
                       apt-get install -y -qq foo2zjs 2>/dev/null || true
-                      
+
+                      cd /tmp
                       if command -v getweb >/dev/null 2>&1; then
                         getweb P1005 2>/dev/null || true
                       fi
 
-                      if [ -f /usr/share/foo2zjs/firmware/sihp1005.dl ]; then
-                        cp /usr/share/foo2zjs/firmware/sihp1005.dl "$FW"
+                      if [ -f /tmp/sihpP1005.img ]; then
+                        echo "🔄 Converting sihpP1005.img → sihp1005.dl..."
+                        arm2hpdl < /tmp/sihpP1005.img > "$FW"
                         echo "✅ Firmware cached ($(du -h "$FW" | cut -f1))"
+                      elif [ -f /usr/share/foo2zjs/firmware/sihpP1005.img ]; then
+                        arm2hpdl < /usr/share/foo2zjs/firmware/sihpP1005.img > "$FW"
+                        echo "✅ Firmware cached from share ($(du -h "$FW" | cut -f1))"
                       else
-                        echo "❌ Firmware not found after install — will retry on next pod restart"
+                        echo "❌ sihpP1005.img not found after getweb"
                         exit 0
                       fi
                     else
