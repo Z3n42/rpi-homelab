@@ -107,6 +107,7 @@ network:
 EOF
   chmod 600 "$NETPLAN_FILE"
   netplan generate && netplan apply
+  sleep 2
   echo "    ✅ IP applied: $(ip addr show eth0 | grep 'inet ' | awk '{print $2}')"
   echo "    ✅ DNS: ${DNS_PRIMARY} (primary), ${DNS_SECONDARY} (fallback)"
 fi
@@ -116,7 +117,6 @@ fi
 # ------------------------------------------------------------------------------
 echo -e "\n${GREEN}--> [1.2/5] Preparing kernel & storage (Longhorn & Printing)...${NC}"
 
-# Kernel params for k8s / routing
 cat >/etc/sysctl.d/99-k8s.conf <<'EOF'
 net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1
@@ -124,22 +124,33 @@ net.ipv4.ip_forward                 = 1
 EOF
 sysctl --system > /dev/null
 
-# Ensure iscsi module loads (Storage)
 modprobe iscsi_tcp 2>/dev/null || true
 echo "iscsi_tcp" >/etc/modules-load.d/iscsi.conf
 
-# Blacklist usblp 
+# Blacklist usblp — pod needs raw USB access
 echo "blacklist usblp" > /etc/modprobe.d/blacklist-usblp.conf
 rm -f /etc/modules-load.d/printer.conf
 rmmod usblp 2>/dev/null && echo " ✅ usblp unloaded" || echo " ✅ usblp was not loaded"
 
-# Disable USB autosuspend 
+# CUPS reconnect
+cat > /usr/local/bin/restart-cups-pod.sh <<'EOF'
+#!/bin/bash
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+sleep 2
+/usr/local/bin/kubectl rollout restart deployment/cups -n printing \
+  >> /var/log/cups-pod-restart.log 2>&1
+echo "$(date) CUPS pod restarted due to printer hotplug" >> /var/log/cups-pod-restart.log
+EOF
+chmod +x /usr/local/bin/restart-cups-pod.sh
+
+# Udev: autosuspend off + hotplug restart CUPS pod
 cat > /etc/udev/rules.d/99-hp-p1005.rules <<'EOF'
 SUBSYSTEM=="usb", ATTR{idVendor}=="03f0", ATTR{idProduct}=="3d17", ATTR{power/control}="on", ATTR{power/autosuspend_delay_ms}="-1"
+SUBSYSTEM=="usb", ATTR{idVendor}=="03f0", ATTR{idProduct}=="3d17", ACTION=="add", RUN+="/usr/local/bin/restart-cups-pod.sh"
 EOF
 udevadm control --reload-rules
 udevadm trigger --subsystem-match=usb --action=add 2>/dev/null || true
-echo " ✅ HP P1005 USB autosuspend disabled"
+echo " ✅ HP P1005 USB autosuspend disabled + hotplug handler installed"
 
 # Mask avahi-daemon  
 systemctl stop avahi-daemon.socket avahi-daemon 2>/dev/null || true
