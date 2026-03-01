@@ -72,10 +72,11 @@ resources:
       namespace: pihole
     data:
       custom.hosts: |
-        192.168.1.50 traefik.lan
-        192.168.1.50 cups.lan
-        192.168.1.50 homebridge.lan
-        192.168.1.52 pihole.lan
+        {{ .Values.network.services.traefik.ip }} traefik.{{ .Values.network.domain }}
+        {{ .Values.network.services.cups.ip }} cups.{{ .Values.network.domain }}
+        {{ .Values.network.services.homebridge.ip }} homebridge.{{ .Values.network.domain }}
+        {{ .Values.network.services.pihole.web_ip }} pihole.{{ .Values.network.domain }}
+        {{ .Values.network.node.zenpi_ip }} zenpi.{{ .Values.network.domain }}
 
   - apiVersion: v1
     kind: PersistentVolumeClaim
