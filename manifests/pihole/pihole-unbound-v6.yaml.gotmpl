@@ -380,6 +380,7 @@ resources:
                   for URL in \
                     "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts" \
                     "https://big.oisd.nl" \
+                    "https://blocklistproject.github.io/Lists/basic.txt" \
                     "https://v.firebog.net/hosts/static/w3kbl.txt" \
                     "https://adaway.org/hosts.txt" \
                     "https://v.firebog.net/hosts/AdguardDNS.txt" \
@@ -412,7 +413,15 @@ resources:
                     "https://blocklistproject.github.io/Lists/crypto.txt" \
                     "https://blocklistproject.github.io/Lists/redirect.txt" \
                     "https://blocklistproject.github.io/Lists/smart-tv.txt" \
-                    "https://blocklistproject.github.io/Lists/vaping.txt"; do
+                    "https://blocklistproject.github.io/Lists/vaping.txt"
+                    "https://github.com/blocklistproject/Lists/blob/master/youtube.txt" \
+                    "https://gitlab.com/quidsup/notrack-blocklists/raw/master/notrack-malware.txt" \
+                    "https://hostfiles.frogeye.fr/firstparty-trackers-hosts.txt" \
+                    "https://lists.cyberhost.uk/malware.txt" \
+                    "https://raw.githubusercontent.com/AssoEchap/stalkerware-indicators/master/generated/hosts" \
+                    "https://raw.githubusercontent.com/DandelionSprout/adfilt/master/Alternate%20versions%20Anti-Malware%20List/AntiMalwareHosts.txt" \
+                    "https://raw.githubusercontent.com/FadeMind/hosts.extras/master/UncheckyAds/hosts" \
+                    "https://raw.githubusercontent.com/kboghdady/youTube_ads_4_pi-hole/master/youtubelist.txt" ; do
                     curl -sf -X POST "$BASE/api/lists" \
                       -H "Content-Type: application/json" \
                       -H "sid: $TOKEN" \
