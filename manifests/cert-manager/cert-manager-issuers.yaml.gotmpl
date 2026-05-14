@@ -46,13 +46,9 @@ resources:
     kind: Certificate
     metadata:
       name: ingonzal-dev-wildcard
-      namespace: cert-manager
+      namespace: traefik-system
     spec:
       secretName: ingonzal-dev-tls
-      secretTemplate:
-        annotations:
-          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: "traefik-system,pihole,homebridge,printing"
       issuerRef:
         name: letsencrypt-prod
         kind: ClusterIssuer

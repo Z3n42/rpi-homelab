@@ -365,11 +365,30 @@ releases:
     namespace: traefik-system
     needs:
       - traefik-system/traefik
+      - cert-manager/cert-manager-issuers
       - printing/cups
       - homebridge/homebridge
       - pihole/pihole-stack
     values:
       - resources:
+          - apiVersion: traefik.io/v1alpha1
+            kind: TLSStore
+            metadata:
+              name: default
+              namespace: traefik-system
+            spec:
+              defaultCertificate:
+                secretName: ingonzal-dev-tls
+          - apiVersion: traefik.io/v1alpha1
+            kind: Middleware
+            metadata:
+              name: redirect-to-dashboard
+              namespace: traefik-system
+            spec:
+              redirectRegex:
+                regex: "^(https?://[^/]+)/?$"
+                replacement: "${1}/dashboard/"
+                permanent: true
           - {{ tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") . | indent 12 | trim }}
           - {{ tpl (readFile "manifests/ingresses/cups-ingress.yaml.gotmpl") . | indent 12 | trim }}
           - {{ tpl (readFile "manifests/ingresses/homebridge-ingress.yaml.gotmpl") . | indent 12 | trim }}
@@ -390,26 +409,27 @@ releases:
     values:
       - provider:
           name: pihole
-      - env:
+        sources:
+          - traefik-proxy
+        domainFilters:
+          - "ingonzal.dev"
+        registry: noop
+        policy: upsert-only
+        logLevel: info
+        interval: 1m
+        env:
           - name: EXTERNAL_DNS_PIHOLE_PASSWORD
             value: "{{ .Values.pihole.adminPassword }}"
-      - extraArgs:
+        extraArgs:
           - "--pihole-server=http://pihole-web.pihole.svc.cluster.local"
-          - "--source=traefik-proxy"
-          - "--domain-filter=ingonzal.dev"
-          - "--registry=noop"
-          - "--policy=upsert-only"
-          - "--log-level=info"
-          - "--interval=1m"
-      - rbac:
+        rbac:
           create: true
           additionalPermissions:
             - apiGroups: ["traefik.io", "traefik.containo.us"]
               resources: ["ingressroutes", "ingressroutetcps", "ingressrouteudps"]
               verbs: ["get", "watch", "list"]
-      - serviceAccount:
+        serviceAccount:
           create: true
-          name: external-dns
 
   # -----------------------------
   # CLEANUP TOOLS
