@@ -13,6 +13,8 @@ repositories:
     url: https://bedag.github.io/helm-charts
   - name: traefik
     url: https://traefik.github.io/charts
+  - name: jetstack
+    url: https://charts.jetstack.io
 
 ---
 environments:
@@ -90,9 +92,45 @@ releases:
       - values/longhorn.yaml
 
   # -----------------------------
-  # TRAEFIK
+  # CERT-MANAGER
   # -----------------------------
-  - name: traefik-crds
+  - name: cert-manager
+    namespace: cert-manager
+    chart: jetstack/cert-manager
+    version: "v1.17.2"
+    createNamespace: true
+    needs:
+      - longhorn-system/longhorn
+    set:
+      - name: crds.enabled
+        value: "true"
+    hooks:
+      - events: [postsync]
+        showlogs: true
+        command: "kubectl"
+        args:
+          - "wait"
+          - "--namespace=cert-manager"
+          - "--for=condition=ready"
+          - "pod"
+          - "--selector=app.kubernetes.io/instance=cert-manager"
+          - "--timeout=120s"
+
+  - name: cert-manager-issuers
+    namespace: cert-manager
+    chart: bedag/raw
+    needs:
+      - cert-manager/cert-manager
+    secrets:
+      - secrets/app.sops.yaml
+    values:
+      - resources:
+          - {{ tpl (readFile "manifests/cert-manager/clusterissuer.yaml.gotmpl") . | indent 12 | trim }}
+          - {{ tpl (readFile "manifests/cert-manager/certificate.yaml.gotmpl") . | indent 12 | trim }}
+
+  # -----------------------------
+  # TRAEFIK (CRDs first, then deployment)
+  # -----------------------------
     namespace: traefik-system
     createNamespace: true
     chart: traefik/traefik

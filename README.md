@@ -132,6 +132,8 @@ Developer                GitHub                 Raspberry Pi
 | `metallb` | `metallb-system` | metallb/metallb | — | Layer 2 load balancer |
 | `metallb-config` | `metallb-system` | bedag/raw | — | IP pool + L2Advertisement |
 | `longhorn` | `longhorn-system` | longhorn/longhorn | — | Distributed block storage |
+| `cert-manager` | `cert-manager` | jetstack/cert-manager | — | TLS certificate automation |
+| `cert-manager-issuers` | `cert-manager` | bedag/raw | — | ClusterIssuer (Let's Encrypt) + wildcard cert `*.ingonzal.dev` |
 | `traefik` | `traefik` | traefik/traefik | `192.168.1.50` | Ingress controller (HTTP→HTTPS) |
 | `traefik-resources` | `traefik` | bedag/raw | — | IngressRoutes + middlewares |
 | `tailscale` | `tailscale` | bedag/raw | — | VPN subnet router |
@@ -199,6 +201,20 @@ All service IPs are defined in `values/network.yaml` and referenced throughout `
 
 > DNS resolution: Pi-hole → Unbound → root servers (recursive, no upstream ISP DNS)
 
+### 🏠 Pi-hole Local DNS Records (one-time manual setup)
+
+For LAN access to work with `ingonzal.dev` subdomains, add these records in Pi-hole:
+**Settings → Local DNS → DNS Records**
+
+| Domain | IP |
+|---|---|
+| `pihole.ingonzal.dev` | `192.168.1.52` |
+| `homebridge.ingonzal.dev` | `192.168.1.55` |
+| `cups.ingonzal.dev` | `192.168.1.51` |
+| `traefik.ingonzal.dev` | `192.168.1.50` |
+
+> This ensures all LAN traffic resolves locally to the service IPs — Cloudflare is never queried for internal access.
+
 ---
 
 ## ⚙️ GitOps Workflows
@@ -214,7 +230,7 @@ git tag deploy-20250514 && git push origin deploy-20250514
 **Flow:**
 1. Detects changed files (`values/`, `manifests/`, `helmfile.yaml`)
 2. Maps changes → affected releases (smart change detection)
-3. Deploys in dependency order: `metallb → longhorn → traefik → pihole → homebridge → tailscale → cups-config → cups → cups-avahi-service → cups-avahi`
+3. Deploys in dependency order: `metallb → longhorn → cert-manager → cert-manager-issuers → traefik → pihole → homebridge → tailscale → cups-config → cups → cups-avahi-service → cups-avahi`
 4. Verifies pod health post-deploy
 5. Auto-rollback if the new revision is unhealthy
 
@@ -230,7 +246,7 @@ Manually trigger a full redeploy of a specific service stack:
 | `tailscale` | tailscale |
 | `cups` | cups-config, cups, cups-avahi-service, cups-avahi |
 | `ingresses` | traefik-resources |
-| `networking-only` | metallb, metallb-config |
+| `networking-only` | metallb, metallb-config, cert-manager, cert-manager-issuers |
 
 ### `full-reset.yaml` — Complete Reset
 
@@ -298,6 +314,11 @@ cups:
 
 traefik:
   # Reserved for future cert-manager/ACME integration (not used currently)
+  email: "your@email.com"
+
+cloudflare:
+  # API token from Cloudflare dashboard (Zone → DNS → Edit, scoped to ingonzal.dev)
+  apiToken: "your-cloudflare-api-token"
   email: "your@email.com"
 ```
 

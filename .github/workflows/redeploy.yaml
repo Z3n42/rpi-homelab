@@ -58,13 +58,13 @@ jobs:
           helmfile sync --selector name=longhorn
 
           case "$TARGET" in
-            all) SERVICES=("pihole-stack" "homebridge" "tailscale" "cups-config" "cups" "cups-avahi-service" "cups-avahi" "traefik-resources") ;;
+            all) SERVICES=("pihole-stack" "homebridge" "tailscale" "cert-manager-issuers" "cups-config" "cups" "cups-avahi-service" "cups-avahi" "traefik-resources") ;;
             pihole) SERVICES=("pihole-stack") ;;
             homebridge) SERVICES=("homebridge") ;;
             tailscale) SERVICES=("tailscale") ;;
             cups) SERVICES=("cups-config" "cups" "cups-avahi-service" "cups-avahi") ;;
             ingresses) SERVICES=("traefik-resources") ;;
-            networking-only) SERVICES=() ;;
+            networking-only) SERVICES=("cert-manager" "cert-manager-issuers") ;;
           esac
 
           FAILED=()

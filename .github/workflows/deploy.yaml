@@ -61,6 +61,9 @@ jobs:
               manifests/ingresses/*)
                 SERVICES+=("traefik-resources")
                 ;;
+              manifests/cert-manager/*|values/network.yaml)
+                SERVICES+=("cert-manager-issuers")
+                ;;
               values/network.yaml|secrets/app.sops.yaml|manifests/cups/*)
                 SERVICES+=("cups-config")
                 SERVICES+=("cups")
