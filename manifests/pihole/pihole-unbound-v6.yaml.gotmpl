@@ -193,8 +193,6 @@ resources:
               env:
                 - name: TZ
                   value: "Europe/Madrid"
-                - name: DNSMASQ_LISTENING
-                  value: "all"
                 - name: FTLCONF_webserver_api_password
                   valueFrom:
                     secretKeyRef:
@@ -416,8 +414,8 @@ resources:
                     "https://blocklistproject.github.io/Lists/crypto.txt" \
                     "https://blocklistproject.github.io/Lists/redirect.txt" \
                     "https://blocklistproject.github.io/Lists/smart-tv.txt" \
-                    "https://blocklistproject.github.io/Lists/vaping.txt"
-                    "https://github.com/blocklistproject/Lists/blob/master/youtube.txt" \
+                    "https://blocklistproject.github.io/Lists/vaping.txt" \
+                    "https://raw.githubusercontent.com/blocklistproject/Lists/master/youtube.txt" \
                     "https://gitlab.com/quidsup/notrack-blocklists/raw/master/notrack-malware.txt" \
                     "https://hostfiles.frogeye.fr/firstparty-trackers-hosts.txt" \
                     "https://lists.cyberhost.uk/malware.txt" \

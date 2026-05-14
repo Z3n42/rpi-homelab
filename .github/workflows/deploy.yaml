@@ -49,23 +49,35 @@ jobs:
           SERVICES=()
           for f in $CHANGED; do
             case "$f" in
-              manifests/pihole/*|values/pihole*|secrets/pihole*)
+              secrets/app.sops.yaml)
+                # Secrets file affects all releases that use SOPS values
+                SERVICES+=("pihole-stack" "cert-manager-issuers" "tailscale"
+                           "external-dns-secret" "cups-config" "cups"
+                           "cups-avahi-service" "cups-avahi" "traefik-resources")
+                ;;
+              manifests/pihole/*)
                 SERVICES+=("pihole-stack")
                 ;;
-              manifests/homebridge/*|values/homebridge*)
+              manifests/homebridge/*)
                 SERVICES+=("homebridge")
                 ;;
-              manifests/tailscale/*|values/tailscale*)
+              manifests/tailscale/*)
                 SERVICES+=("tailscale")
                 ;;
               manifests/ingresses/*)
                 SERVICES+=("traefik-resources")
                 SERVICES+=("external-dns")
                 ;;
-              manifests/cert-manager/*|values/network.yaml)
+              manifests/cert-manager/*)
                 SERVICES+=("cert-manager-issuers")
                 ;;
-              values/network.yaml|secrets/app.sops.yaml|manifests/cups/*)
+              values/network.yaml)
+                # network.yaml affects IPs used by metallb-config, traefik, pihole, homebridge, cups and ingresses
+                SERVICES+=("metallb-config" "traefik" "pihole-stack" "homebridge"
+                           "cups-config" "cups" "cups-avahi-service" "cups-avahi"
+                           "traefik-resources" "cert-manager-issuers")
+                ;;
+              manifests/cups/*|values/cups*)
                 SERVICES+=("cups-config")
                 SERVICES+=("cups")
                 SERVICES+=("cups-avahi-service")
@@ -74,16 +86,17 @@ jobs:
             esac
           done
 
-          printf "%s\n" "${SERVICES[@]}" | sort -u > /tmp/changed_services_sorted.list
+          printf "%s\n" "${SERVICES[@]}" | sort -u > "$RUNNER_TEMP/changed_services_sorted.list"
 
           # Enforce deployment order respecting helmfile needs: dependencies
+          # metallb-config → traefik → cert-manager-issuers → traefik-resources
           # cups-config → cups → cups-avahi-service → cups-avahi
-          > /tmp/changed_services.list
-          for ordered in cups-config cups cups-avahi-service cups-avahi; do
-            grep -x "$ordered" /tmp/changed_services_sorted.list >> /tmp/changed_services.list || true
+          > "$RUNNER_TEMP/changed_services.list"
+          for ordered in metallb-config traefik cert-manager-issuers traefik-resources cups-config cups cups-avahi-service cups-avahi; do
+            grep -x "$ordered" "$RUNNER_TEMP/changed_services_sorted.list" >> "$RUNNER_TEMP/changed_services.list" || true
           done
           # Append any remaining services not explicitly ordered above
-          grep -xvE "cups-config|cups|cups-avahi-service|cups-avahi" /tmp/changed_services_sorted.list >> /tmp/changed_services.list || true
+          grep -xvE "metallb-config|traefik|cert-manager-issuers|traefik-resources|cups-config|cups|cups-avahi-service|cups-avahi" "$RUNNER_TEMP/changed_services_sorted.list" >> "$RUNNER_TEMP/changed_services.list" || true
 
       - name: 🚀 Deploy with Helmfile (with rollback safeguard)
         shell: bash
@@ -111,8 +124,8 @@ jobs:
 
           FAILED=()
 
-          if [ -s /tmp/changed_services.list ]; then
-            for svc in $(cat /tmp/changed_services.list); do
+          if [ -s "$RUNNER_TEMP/changed_services.list" ]; then
+            for svc in $(cat "$RUNNER_TEMP/changed_services.list"); do
               echo "🎯 Syncing $svc..."
               if ! helmfile sync --selector name="$svc"; then
                 FAILED+=("$svc")
@@ -127,15 +140,19 @@ jobs:
 
             for svc in "${FAILED[@]}"; do
               case "$svc" in
-                pihole-stack) rollback_if_needed "pihole-stack" "pihole" ;;
-                homebridge)   rollback_if_needed "homebridge"   "homebridge" ;;
-                tailscale)    rollback_if_needed "tailscale"    "tailscale" ;;
-                cups-config)  rollback_if_needed "cups-config"       "printing" ;;
-                cups)         rollback_if_needed "cups"               "printing" ;;
+                pihole-stack)      rollback_if_needed "pihole-stack"      "pihole" ;;
+                homebridge)        rollback_if_needed "homebridge"        "homebridge" ;;
+                tailscale)         rollback_if_needed "tailscale"         "tailscale" ;;
+                cups-config)       rollback_if_needed "cups-config"       "printing" ;;
+                cups)              rollback_if_needed "cups"              "printing" ;;
                 cups-avahi-service) rollback_if_needed "cups-avahi-service" "printing" ;;
-                cups-avahi)   rollback_if_needed "cups-avahi"         "printing" ;;
+                cups-avahi)        rollback_if_needed "cups-avahi"        "printing" ;;
                 traefik-resources) rollback_if_needed "traefik-resources" "traefik-system" ;;
-                external-dns)     rollback_if_needed "external-dns"      "external-dns" ;;
+                traefik)           rollback_if_needed "traefik"           "traefik-system" ;;
+                metallb-config)    rollback_if_needed "metallb-config"    "metallb-system" ;;
+                cert-manager-issuers) rollback_if_needed "cert-manager-issuers" "cert-manager" ;;
+                external-dns)      rollback_if_needed "external-dns"      "external-dns" ;;
+                external-dns-secret) rollback_if_needed "external-dns-secret" "external-dns" ;;
               esac
             done
 

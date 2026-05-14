@@ -101,8 +101,6 @@ releases:
     chart: jetstack/cert-manager
     version: "v1.17.2"
     createNamespace: true
-    needs:
-      - longhorn-system/longhorn
     set:
       - name: crds.enabled
         value: "true"
@@ -190,9 +188,11 @@ releases:
             expose:
               default: false
       - service:
+          annotations:
+            metallb.universe.tf/address-pool: traefik-pool
+            metallb.universe.tf/loadBalancerIPs: "{{ .Values.network.services.traefik.ip }}"
           spec:
             type: LoadBalancer
-            loadBalancerIP: "{{ .Values.network.services.traefik.ip }}"
           ports:
             cups:
               port: 631
@@ -212,7 +212,7 @@ releases:
     chart: bedag/raw
     createNamespace: true
     needs:
-      - metallb-system/metallb
+      - metallb-system/metallb-config
       - longhorn-system/longhorn
       - traefik-system/traefik
     values:
@@ -228,7 +228,7 @@ releases:
     chart: bjw-s/app-template
     createNamespace: true
     needs:
-      - metallb-system/metallb
+      - metallb-system/metallb-config
       - longhorn-system/longhorn
     values:
       - controllers:
@@ -398,15 +398,32 @@ releases:
   # -----------------------------
   # EXTERNAL-DNS (Pi-hole auto DNS)
   # -----------------------------
+  - name: external-dns-secret
+    namespace: external-dns
+    chart: bedag/raw
+    createNamespace: true
+    secrets:
+      - secrets/app.sops.yaml
+    values:
+      - resources:
+          - apiVersion: v1
+            kind: Secret
+            metadata:
+              name: external-dns-pihole
+              namespace: external-dns
+            type: Opaque
+            stringData:
+              password: "{{ .Values.pihole.adminPassword }}"
+
   - name: external-dns
     namespace: external-dns
     chart: external-dns/external-dns
+    version: "1.16.1"
     createNamespace: true
     needs:
+      - external-dns/external-dns-secret
       - traefik-system/traefik-resources
       - pihole/pihole-stack
-    secrets:
-      - secrets/app.sops.yaml
     values:
       - provider:
           name: pihole
@@ -419,10 +436,13 @@ releases:
         logLevel: info
         interval: 1m
         env:
+          - name: EXTERNAL_DNS_PIHOLE_SERVER
+            value: "http://pihole-web.pihole.svc.cluster.local"
           - name: EXTERNAL_DNS_PIHOLE_PASSWORD
-            value: "{{ .Values.pihole.adminPassword }}"
-        extraArgs:
-          - "--pihole-server=http://pihole-web.pihole.svc.cluster.local"
+            valueFrom:
+              secretKeyRef:
+                name: external-dns-pihole
+                key: password
         rbac:
           create: true
           additionalPermissions:

@@ -58,12 +58,12 @@ jobs:
           helmfile sync --selector name=longhorn
 
           case "$TARGET" in
-            all) SERVICES=("pihole-stack" "homebridge" "tailscale" "cert-manager-issuers" "cups-config" "cups" "cups-avahi-service" "cups-avahi" "traefik-resources" "external-dns") ;;
+            all) SERVICES=("pihole-stack" "homebridge" "tailscale" "cert-manager-issuers" "cups-config" "cups" "cups-avahi-service" "cups-avahi" "traefik-resources" "external-dns-secret" "external-dns") ;;
             pihole) SERVICES=("pihole-stack") ;;
             homebridge) SERVICES=("homebridge") ;;
             tailscale) SERVICES=("tailscale") ;;
             cups) SERVICES=("cups-config" "cups" "cups-avahi-service" "cups-avahi") ;;
-            ingresses) SERVICES=("traefik-resources" "external-dns") ;;
+            ingresses) SERVICES=("traefik-resources" "external-dns-secret" "external-dns") ;;
             networking-only) SERVICES=("cert-manager" "cert-manager-issuers") ;;
           esac
 
@@ -81,15 +81,19 @@ jobs:
 
             for svc in "${FAILED[@]}"; do
               case "$svc" in
-                pihole-stack) rollback_if_needed "pihole-stack" "pihole" ;;
-                homebridge)   rollback_if_needed "homebridge"   "homebridge" ;;
-                tailscale)    rollback_if_needed "tailscale"    "tailscale" ;;
-                cups-config)  rollback_if_needed "cups-config"       "printing" ;;
-                cups)         rollback_if_needed "cups"               "printing" ;;
+                pihole-stack)      rollback_if_needed "pihole-stack"      "pihole" ;;
+                homebridge)        rollback_if_needed "homebridge"        "homebridge" ;;
+                tailscale)         rollback_if_needed "tailscale"         "tailscale" ;;
+                cups-config)       rollback_if_needed "cups-config"       "printing" ;;
+                cups)              rollback_if_needed "cups"              "printing" ;;
                 cups-avahi-service) rollback_if_needed "cups-avahi-service" "printing" ;;
-                cups-avahi)   rollback_if_needed "cups-avahi"         "printing" ;;
+                cups-avahi)        rollback_if_needed "cups-avahi"        "printing" ;;
                 traefik-resources) rollback_if_needed "traefik-resources" "traefik-system" ;;
-                external-dns)     rollback_if_needed "external-dns"      "external-dns" ;;
+                traefik)           rollback_if_needed "traefik"           "traefik-system" ;;
+                metallb-config)    rollback_if_needed "metallb-config"    "metallb-system" ;;
+                cert-manager-issuers) rollback_if_needed "cert-manager-issuers" "cert-manager" ;;
+                external-dns)      rollback_if_needed "external-dns"      "external-dns" ;;
+                external-dns-secret) rollback_if_needed "external-dns-secret" "external-dns" ;;
               esac
             done
 

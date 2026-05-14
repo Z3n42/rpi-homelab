@@ -5,5 +5,6 @@ persistence:
 instanceManager:
   cpuRequest: 50m
   memoryRequest: 128Mi
-  defaultSettings:
-    fuseMountLbfifoBufferSize: "2097152"
+
+defaultSettings:
+  fuseMountLbfifoBufferSize: "2097152"
