@@ -62,12 +62,24 @@ jobs:
                 SERVICES+=("traefik-resources")
                 ;;
               values/network.yaml|secrets/app.sops.yaml|manifests/cups/*)
+                SERVICES+=("cups-config")
                 SERVICES+=("cups")
+                SERVICES+=("cups-avahi-service")
+                SERVICES+=("cups-avahi")
                 ;;
             esac
           done
 
-          printf "%s\n" "${SERVICES[@]}" | sort -u > /tmp/changed_services.list
+          printf "%s\n" "${SERVICES[@]}" | sort -u > /tmp/changed_services_sorted.list
+
+          # Enforce deployment order respecting helmfile needs: dependencies
+          # cups-config → cups → cups-avahi-service → cups-avahi
+          > /tmp/changed_services.list
+          for ordered in cups-config cups cups-avahi-service cups-avahi; do
+            grep -x "$ordered" /tmp/changed_services_sorted.list >> /tmp/changed_services.list || true
+          done
+          # Append any remaining services not explicitly ordered above
+          grep -xvE "cups-config|cups|cups-avahi-service|cups-avahi" /tmp/changed_services_sorted.list >> /tmp/changed_services.list || true
 
       - name: 🚀 Deploy with Helmfile (with rollback safeguard)
         shell: bash
@@ -78,10 +90,10 @@ jobs:
             local RELEASE=$1
             local NS=$2
 
-            PREV=$(helm history "$RELEASE" -n "$NS" | awk 'NR==2{print $1}')
-            NEW=$(helm history "$RELEASE" -n "$NS" | awk 'NR==2{print $1}')
+            PREV=$(helm history "$RELEASE" -n "$NS" --output table 2>/dev/null | tail -2 | head -1 | awk '{print $1}')
+            NEW=$(helm history "$RELEASE" -n "$NS" --output table 2>/dev/null | tail -1 | awk '{print $1}')
 
-            if [ "$NEW" -gt "$PREV" ]; then
+            if [ -n "$PREV" ] && [ "$NEW" -gt "$PREV" ]; then
               echo "⚠️ Rolling back $RELEASE to revision $PREV"
               helm rollback "$RELEASE" "$PREV" -n "$NS"
             else
@@ -114,7 +126,10 @@ jobs:
                 pihole-stack) rollback_if_needed "pihole-stack" "pihole" ;;
                 homebridge)   rollback_if_needed "homebridge"   "homebridge" ;;
                 tailscale)    rollback_if_needed "tailscale"    "tailscale" ;;
-                cups)         rollback_if_needed "cups"         "printing" ;;
+                cups-config)  rollback_if_needed "cups-config"       "printing" ;;
+                cups)         rollback_if_needed "cups"               "printing" ;;
+                cups-avahi-service) rollback_if_needed "cups-avahi-service" "printing" ;;
+                cups-avahi)   rollback_if_needed "cups-avahi"         "printing" ;;
                 traefik-resources) rollback_if_needed "traefik-resources" "traefik-system" ;;
               esac
             done

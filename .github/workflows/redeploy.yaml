@@ -40,10 +40,10 @@ jobs:
             local RELEASE=$1
             local NS=$2
 
-            PREV=$(helm history "$RELEASE" -n "$NS" | awk 'NR==2{print $1}')
-            NEW=$(helm history "$RELEASE" -n "$NS" | awk 'NR==2{print $1}')
+            PREV=$(helm history "$RELEASE" -n "$NS" --output table 2>/dev/null | tail -2 | head -1 | awk '{print $1}')
+            NEW=$(helm history "$RELEASE" -n "$NS" --output table 2>/dev/null | tail -1 | awk '{print $1}')
 
-            if [ "$NEW" -gt "$PREV" ]; then
+            if [ -n "$PREV" ] && [ "$NEW" -gt "$PREV" ]; then
               echo "⚠️ Rolling back $RELEASE to revision $PREV"
               helm rollback "$RELEASE" "$PREV" -n "$NS"
             else
@@ -58,10 +58,12 @@ jobs:
           helmfile sync --selector name=longhorn
 
           case "$TARGET" in
-            all) SERVICES=("pihole-stack" "homebridge" "tailscale") ;;
+            all) SERVICES=("pihole-stack" "homebridge" "tailscale" "cups-config" "cups" "cups-avahi-service" "cups-avahi" "traefik-resources") ;;
             pihole) SERVICES=("pihole-stack") ;;
             homebridge) SERVICES=("homebridge") ;;
             tailscale) SERVICES=("tailscale") ;;
+            cups) SERVICES=("cups-config" "cups" "cups-avahi-service" "cups-avahi") ;;
+            ingresses) SERVICES=("traefik-resources") ;;
             networking-only) SERVICES=() ;;
           esac
 
@@ -82,6 +84,11 @@ jobs:
                 pihole-stack) rollback_if_needed "pihole-stack" "pihole" ;;
                 homebridge)   rollback_if_needed "homebridge"   "homebridge" ;;
                 tailscale)    rollback_if_needed "tailscale"    "tailscale" ;;
+                cups-config)  rollback_if_needed "cups-config"       "printing" ;;
+                cups)         rollback_if_needed "cups"               "printing" ;;
+                cups-avahi-service) rollback_if_needed "cups-avahi-service" "printing" ;;
+                cups-avahi)   rollback_if_needed "cups-avahi"         "printing" ;;
+                traefik-resources) rollback_if_needed "traefik-resources" "traefik-system" ;;
               esac
             done
 
@@ -130,6 +137,7 @@ jobs:
               safe_restart "pihole" "pihole-v6"
               safe_restart "homebridge" "homebridge"
               safe_restart "tailscale" "tailscale-operator"
+              safe_restart "printing" "cups"
               ;;
             pihole)
               safe_restart "pihole" "pihole-v6"
@@ -139,6 +147,12 @@ jobs:
               ;;
             tailscale)
               safe_restart "tailscale" "tailscale-operator"
+              ;;
+            cups)
+              safe_restart "printing" "cups"
+              ;;
+            ingresses)
+              echo "No pod restarts needed for ingresses."
               ;;
             networking-only)
               echo "No restarts needed."

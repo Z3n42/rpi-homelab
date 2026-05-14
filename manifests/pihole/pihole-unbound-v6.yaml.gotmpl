@@ -221,16 +221,18 @@ resources:
                   mountPath: /etc/pihole/hosts
                   readOnly: true
               readinessProbe:
-                tcpSocket:
+                httpGet:
+                  path: /api/auth
                   port: 80
-                initialDelaySeconds: 15
+                initialDelaySeconds: 20
                 periodSeconds: 10
                 timeoutSeconds: 3
                 failureThreshold: 6
               livenessProbe:
-                tcpSocket:
+                httpGet:
+                  path: /api/auth
                   port: 80
-                initialDelaySeconds: 30
+                initialDelaySeconds: 45
                 periodSeconds: 30
                 timeoutSeconds: 5
                 failureThreshold: 3
@@ -338,7 +340,8 @@ resources:
       namespace: pihole
     spec:
       ttlSecondsAfterFinished: 300
-      backoffLimit: 3
+      backoffLimit: 5
+      activeDeadlineSeconds: 3600
       template:
         spec:
           restartPolicy: OnFailure

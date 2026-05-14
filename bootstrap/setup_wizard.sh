@@ -76,6 +76,14 @@ if [ -n "$ZENPI_IP" ]; then
   echo -e "${GREEN}Configuring static IP $ZENPI_IP via netplan...${NC}"
   NETPLAN_FILE="/etc/netplan/01-zenpi.yaml"
 
+  # Detect current gateway before changing network config
+  GATEWAY=$(ip route 2>/dev/null | awk '/^default/{print $3; exit}')
+  if [ -z "$GATEWAY" ]; then
+    echo -e "${RED}❌ Could not detect default gateway. Check network before proceeding.${NC}"
+    exit 1
+  fi
+  echo "    - Detected gateway: $GATEWAY"
+
   DNS_PRIMARY="1.1.1.1"
   DNS_SECONDARY="8.8.8.8"
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
@@ -99,7 +107,7 @@ network:
         - ${ZENPI_IP}/24
       routes:
         - to: default
-          via: 192.168.1.1
+          via: ${GATEWAY}
       nameservers:
         addresses:
           - ${DNS_PRIMARY}
@@ -174,6 +182,14 @@ echo " ✅ avahi-daemon masked (mDNS handled by cups-avahi pod)"
 # ------------------------------------------------------------------------------
 echo -e "\n${GREEN}--> [K3s] Synchronizing Engine Configuration...${NC}"
 
+# Write config BEFORE installing k3s so traefik/servicelb are disabled from the start
+mkdir -p /etc/rancher/k3s
+cat <<'EOF' > /etc/rancher/k3s/config.yaml
+disable:
+  - traefik
+  - servicelb
+EOF
+
 if ! command -v k3s &> /dev/null; then
   echo "    - Installing K3s..."
   curl -sfL https://get.k3s.io | sh -
@@ -183,18 +199,16 @@ if ! command -v k3s &> /dev/null; then
   echo "export KUBECONFIG=$REAL_HOME/.kube/config" >> "$REAL_HOME/.bashrc"
 else
   echo "    - K3s already installed."
+  # Ensure config is applied — restart if traefik/servicelb were previously enabled
+  if systemctl is-active --quiet k3s; then
+    systemctl restart k3s
+    sleep 10
+  fi
 fi
 
 if [ ! -f /usr/local/bin/kubectl ]; then
   ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
 fi
-
-mkdir -p /etc/rancher/k3s
-cat <<'EOF' > /etc/rancher/k3s/config.yaml
-disable:
-  - traefik
-  - servicelb
-EOF
 
 cat > /usr/local/bin/k3s-flannel-bootstrap.sh <<'EOF'
 #!/bin/bash
@@ -336,23 +350,36 @@ echo -e "\n${GREEN}--> [1.8/5] Installing Helm, Helmfile & SOPS...${NC}"
 
 if ! command -v helm &> /dev/null; then
   echo "    - Installing Helm..."
-  curl https://raw.githubusercontent.com | bash
+  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 fi
 
+# helm-secrets: required for helmfile to decrypt secrets/app.sops.yaml via SOPS/AGE
 echo "    - Checking Helm plugins for $REAL_USER..."
-sudo -u "$REAL_USER" helm plugin install https://github.com --version v4.6.0 > /dev/null 2>&1 || true
-sudo -u "$REAL_USER" helm plugin install https://github.com > /dev/null 2>&1 || true
+if ! sudo -u "$REAL_USER" HOME="$REAL_HOME" helm plugin list 2>/dev/null | grep -q "secrets"; then
+  sudo -u "$REAL_USER" HOME="$REAL_HOME" helm plugin install https://github.com/jkroepke/helm-secrets --version v4.6.0
+else
+  echo "    - helm-secrets already installed."
+fi
+
+# helm-diff: required by helmfile sync/apply to detect changes
+if ! sudo -u "$REAL_USER" HOME="$REAL_HOME" helm plugin list 2>/dev/null | grep -q "diff"; then
+  sudo -u "$REAL_USER" HOME="$REAL_HOME" helm plugin install https://github.com/databus23/helm-diff
+else
+  echo "    - helm-diff already installed."
+fi
 
 if ! command -v helmfile &> /dev/null; then
   echo "    - Installing Helmfile..."
-  curl -sSfL https://github.com | tar xz
+  HELMFILE_VERSION=$(curl -sSf https://api.github.com/repos/helmfile/helmfile/releases/latest | jq -r .tag_name)
+  curl -sSfL "https://github.com/helmfile/helmfile/releases/download/${HELMFILE_VERSION}/helmfile_linux_arm64.tar.gz" | tar xz helmfile
   mv helmfile /usr/local/bin/
 fi
 
 if ! command -v sops &> /dev/null; then
   echo "    - Installing SOPS..."
-  curl -sSfL https://github.com > sops
-  chmod +x sops && mv sops /usr/local/bin/
+  SOPS_VERSION=$(curl -sSf https://api.github.com/repos/getsops/sops/releases/latest | jq -r .tag_name)
+  curl -sSfL "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.arm64" -o /usr/local/bin/sops
+  chmod +x /usr/local/bin/sops
 fi
 
 # ------------------------------------------------------------------------------
@@ -427,23 +454,24 @@ elif [ "$MODE" == "2" ]; then
 
   RUNNER_DIR="$REAL_HOME/actions-runner"
   if [ -d "$RUNNER_DIR" ]; then
-    cd "$RUNNER_DIR" && sudo ./svc.sh uninstall > /dev/null 2>&1
-    cd "$REPO_ROOT" && rm -rf "$RUNNER_DIR"
+    "$RUNNER_DIR/svc.sh" uninstall > /dev/null 2>&1 || true
+    rm -rf "$RUNNER_DIR"
   fi
 
   sudo -u "$REAL_USER" mkdir -p "$RUNNER_DIR"
-  cd "$RUNNER_DIR"
 
-  LATEST_VERSION=$(curl -s https://api.github.com | jq -r .tag_name | sed 's/v//')
-  sudo -u "$REAL_USER" curl -o actions-runner.tar.gz -L "https://github.com{LATEST_VERSION}/actions-runner-linux-arm64-${LATEST_VERSION}.tar.gz"
-  sudo -u "$REAL_USER" tar xzf actions-runner.tar.gz
+  LATEST_VERSION=$(curl -sSf https://api.github.com/repos/actions/runner/releases/latest | jq -r '.tag_name' | sed 's/v//')
+  sudo -u "$REAL_USER" curl -o "$RUNNER_DIR/actions-runner.tar.gz" -L "https://github.com/actions/runner/releases/download/v${LATEST_VERSION}/actions-runner-linux-arm64-${LATEST_VERSION}.tar.gz"
+  sudo -u "$REAL_USER" tar xzf "$RUNNER_DIR/actions-runner.tar.gz" -C "$RUNNER_DIR"
 
-  sudo -u "$REAL_USER" ./config.sh --url "${REPO_URL%.git}" --token "$RUNNER_TOKEN" --unattended --name "$(hostname)" --replace
+  sudo -u "$REAL_USER" "$RUNNER_DIR/config.sh" --url "${REPO_URL%.git}" --token "$RUNNER_TOKEN" --unattended --name "$(hostname)" --replace
 
-  echo "KUBECONFIG=$REAL_HOME/.kube/config" | sudo -u "$REAL_USER" tee -a .env > /dev/null
-  echo "SOPS_AGE_KEY_FILE=$KEY_FILE" | sudo -u "$REAL_USER" tee -a .env > /dev/null
+  # SOPS_AGE_KEY_FILE is required for helmfile to decrypt secrets/app.sops.yaml at runtime
+  echo "KUBECONFIG=$REAL_HOME/.kube/config" | sudo -u "$REAL_USER" tee -a "$RUNNER_DIR/.env" > /dev/null
+  echo "SOPS_AGE_KEY_FILE=$KEY_FILE" | sudo -u "$REAL_USER" tee -a "$RUNNER_DIR/.env" > /dev/null
+  echo "HOME=$REAL_HOME" | sudo -u "$REAL_USER" tee -a "$RUNNER_DIR/.env" > /dev/null
 
-  sudo ./svc.sh install "$REAL_USER" && sudo ./svc.sh start
+  sudo "$RUNNER_DIR/svc.sh" install "$REAL_USER" && sudo "$RUNNER_DIR/svc.sh" start
 
   echo -e "\n${GREEN}✅ SUCCESS! Your Pi is now a GitOps Worker.${NC}"
 fi

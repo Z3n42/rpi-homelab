@@ -27,7 +27,7 @@ jobs:
 
     steps:
       - name: 🚨 SAFETY CHECK
-        if: inputs.confirm != 'CONFIRM-CLEANUP'
+        if: github.event.inputs.confirm != 'CONFIRM-CLEANUP'
         run: |
           echo "❌ ABORTED: You must type 'CONFIRM-CLEANUP'!"
           exit 1

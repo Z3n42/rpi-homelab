@@ -58,13 +58,12 @@ releases:
     hooks:
       - events: [preuninstall]
         showlogs: true
-        command: "kubectl"
+        command: "sh"
         args:
-          - "annotate"
-          - "node"
-          - "zenpi"
-          - "node.longhorn.io/drain-policy=block-if-contains-last-replica"
-          - "--overwrite"
+          - "-c"
+          - |
+            NODE=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
+            kubectl annotate node "$NODE" node.longhorn.io/drain-policy=block-if-contains-last-replica --overwrite
       - events: [postsync]
         showlogs: true
         command: "kubectl"
@@ -127,6 +126,8 @@ releases:
             level: INFO
       - additionalArguments:
           - "--entryPoints.web.address=:8000"
+          - "--entryPoints.web.http.redirections.entryPoint.to=websecure"
+          - "--entryPoints.web.http.redirections.entryPoint.scheme=https"
           - "--entryPoints.websecure.address=:8443"
           - "--entryPoints.websecure.http.tls=true"
           - "--entryPoints.cups.address=:631"
@@ -217,6 +218,36 @@ releases:
                   HOMEBRIDGE_CONFIG_UI: "1"
                   HOMEBRIDGE_CONFIG_UI_PORT: "8581"
                   AVAHI: "0"
+                resources:
+                  requests:
+                    cpu: "50m"
+                    memory: "128Mi"
+                  limits:
+                    cpu: "500m"
+                    memory: "512Mi"
+                probes:
+                  liveness:
+                    enabled: true
+                    custom: true
+                    spec:
+                      httpGet:
+                        path: /
+                        port: 8581
+                      initialDelaySeconds: 60
+                      periodSeconds: 30
+                      timeoutSeconds: 5
+                      failureThreshold: 3
+                  readiness:
+                    enabled: true
+                    custom: true
+                    spec:
+                      httpGet:
+                        path: /
+                        port: 8581
+                      initialDelaySeconds: 30
+                      periodSeconds: 10
+                      timeoutSeconds: 3
+                      failureThreshold: 3
       - service:
           main:
             controller: main
@@ -482,6 +513,13 @@ releases:
 
                     echo "✅ Starting CUPS..."
                     exec cupsd -f
+                resources:
+                  requests:
+                    cpu: "100m"
+                    memory: "256Mi"
+                  limits:
+                    cpu: "1000m"
+                    memory: "1Gi"
       - service:
           main:
             controller: main
@@ -591,7 +629,8 @@ releases:
     values:
       - controllers:
           main:
-            type: daemonset
+            type: deployment
+            replicas: 1
             pod:
               hostNetwork: true
               dnsPolicy: ClusterFirstWithHostNet
