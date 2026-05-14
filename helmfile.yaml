@@ -390,16 +390,23 @@ releases:
     values:
       - provider:
           name: pihole
+      - env:
+          - name: EXTERNAL_DNS_PIHOLE_PASSWORD
+            value: "{{ .Values.pihole.adminPassword }}"
       - extraArgs:
           - "--pihole-server=http://pihole-web.pihole.svc.cluster.local"
-          - "--pihole-password={{ .Values.pihole.adminPassword }}"
           - "--source=traefik-proxy"
           - "--domain-filter=ingonzal.dev"
-          - "--txt-owner-id=zenpi"
+          - "--registry=noop"
+          - "--policy=upsert-only"
           - "--log-level=info"
           - "--interval=1m"
       - rbac:
           create: true
+          additionalPermissions:
+            - apiGroups: ["traefik.io", "traefik.containo.us"]
+              resources: ["ingressroutes", "ingressroutetcps", "ingressrouteudps"]
+              verbs: ["get", "watch", "list"]
       - serviceAccount:
           create: true
           name: external-dns
