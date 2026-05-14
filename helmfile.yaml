@@ -123,6 +123,7 @@ releases:
     chart: bedag/raw
     needs:
       - cert-manager/cert-manager
+      - traefik-system/traefik-crds
     secrets:
       - secrets/app.sops.yaml
     values:

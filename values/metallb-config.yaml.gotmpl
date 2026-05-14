@@ -17,6 +17,7 @@ resources:
     kind: IPAddressPool
     metadata:
       name: traefik-pool
+      namespace: metallb-system
     spec:
       addresses:
       - "{{ .Values.network.services.traefik.ip }}/32"

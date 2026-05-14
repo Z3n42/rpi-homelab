@@ -449,13 +449,3 @@ resources:
         stsSeconds: 31536000
         frameDeny: true
         contentSecurityPolicy: "frame-ancestors 'self'"
-
-  - apiVersion: traefik.io/v1alpha1
-    kind: Middleware
-    metadata:
-      name: pihole-redirect-http
-      namespace: pihole
-    spec:
-      redirectScheme:
-        scheme: https
-        permanent: true

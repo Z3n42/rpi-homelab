@@ -15,4 +15,7 @@ spec:
       services:
         - name: pihole-web
           port: 80
+      middlewares:
+        - name: pihole-headers
+          namespace: pihole
   tls: {}
