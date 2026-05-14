@@ -9,12 +9,13 @@
   <img src="https://img.shields.io/badge/Helmfile-Declarative_GitOps-0F1689?style=for-the-badge&logo=helm&logoColor=white" alt="Helmfile"/>
   <img src="https://img.shields.io/badge/GitHub_Actions-Self--Hosted_Runner-2088FF?style=for-the-badge&logo=githubactions&logoColor=white" alt="GitHub Actions"/>
   <img src="https://img.shields.io/badge/SOPS-AGE_Secrets-FF5733?style=for-the-badge&logo=gnupg&logoColor=white" alt="SOPS"/>
+  <img src="https://img.shields.io/badge/Let's_Encrypt-cert--manager-003A70?style=for-the-badge&logo=letsencrypt&logoColor=white" alt="Let's Encrypt"/>
   <img src="https://img.shields.io/badge/Raspberry_Pi_5-ARM64-A22846?style=for-the-badge&logo=raspberrypi&logoColor=white" alt="Raspberry Pi 5"/>
 </p>
 
 *A production-grade homelab on a single Raspberry Pi 5 — fully declarative infrastructure, encrypted secrets, self-hosted CI/CD and real network services for learning modern DevOps/GitOps.*
 
-[Overview](#-overview) • [Architecture](#-architecture) • [Services](#-services) • [Workflows](#-gitops-workflows) • [Setup](#-setup-from-scratch) • [Secrets](#-secrets-management)
+[Overview](#-overview) • [Architecture](#-architecture) • [Services](#-services) • [Workflows](#-gitops-workflows) • [TLS](#-tls--certificates) • [Setup](#-setup-from-scratch) • [Secrets](#-secrets-management)
 
 </div>
 
@@ -28,6 +29,7 @@
 - [Project Structure](#-project-structure)
 - [Network Layout](#-network-layout)
 - [GitOps Workflows](#-gitops-workflows)
+- [TLS & Certificates](#-tls--certificates)
 - [Secrets Management](#-secrets-management)
 - [Setup from Scratch](#-setup-from-scratch)
 - [Values & Configuration](#-values--configuration)
@@ -61,6 +63,7 @@
 | Storage | Longhorn (distributed block storage) |
 | Load Balancer | MetalLB (Layer 2) |
 | Ingress | Traefik v3 |
+| TLS | cert-manager + Let's Encrypt (DNS-01 via Cloudflare) |
 | DNS | Pi-hole + Unbound |
 | VPN | Tailscale Subnet Router |
 | Home automation | Homebridge (Apple HomeKit bridge) |
@@ -94,10 +97,10 @@
 │  │  │  │   CUPS   │  │   Avahi    │  │   Traefik   │  │   │    │
 │  │  │  │ (HP USB) │  │  (mDNS)    │  │  (Ingress)  │  │   │    │
 │  │  │  └──────────┘  └────────────┘  └─────────────┘  │   │    │
-│  │  │  ┌──────────┐                                    │   │    │
-│  │  │  │ Longhorn │                                    │   │    │
-│  │  │  │ (storage)│                                    │   │    │
-│  │  │  └──────────┘                                    │   │    │
+│  │  │  ┌──────────┐  ┌────────────┐                    │   │    │
+│  │  │  │ Longhorn │  │cert-manager│                    │   │    │
+│  │  │  │ (storage)│  │ (LE certs) │                    │   │    │
+│  │  │  └──────────┘  └────────────┘                    │   │    │
 │  │  │                                                   │   │    │
 │  │  │  🤖 GitHub Actions Runner (self-hosted)           │   │    │
 │  │  └───────────────────────────────────────────────────┘   │    │
@@ -164,6 +167,7 @@ rpi-homelab/
 ├── helmfile.yaml                # Single source of truth for all releases
 │
 ├── manifests/
+│   ├── cert-manager/            # ClusterIssuer (staging + prod) + wildcard Certificate
 │   ├── ingresses/               # Traefik IngressRoutes (dashboard, CUPS, Homebridge)
 │   ├── pihole/                  # Pi-hole + Unbound full manifest (gotmpl)
 │   └── tailscale/               # Tailscale subnet router manifest
@@ -262,6 +266,86 @@ Removes Helm releases but **preserves PersistentVolumeClaims** (data survives).
 
 ---
 
+## 🔒 TLS & Certificates
+
+All services are served over HTTPS with valid certificates from **Let's Encrypt**, automatically managed by **cert-manager** using a **DNS-01 challenge via Cloudflare**.
+
+### How the Certificate Flow Works
+
+```
+cert-manager (in cluster)
+    │
+    ├─ creates DNS TXT record via Cloudflare API  ← only needs internet ~5 min every 60 days
+    │
+    ├─ Let's Encrypt verifies the TXT record
+    │
+    ├─ issues wildcard cert  *.ingonzal.dev
+    │
+    └─ stores cert as Secret ingonzal-dev-tls in cert-manager namespace
+           │
+           └─ Traefik references it in all IngressRoutes (tls.secretName)
+```
+
+### Issuer Strategy: Staging First
+
+Let's Encrypt enforces **rate limits on prod** (5 failed certs per domain per hour). The setup uses **staging first** to validate the full flow before switching to prod.
+
+```
+manifests/cert-manager/certificate.yaml.gotmpl
+  issuerRef:
+    name: letsencrypt-staging   ← start here
+    # name: letsencrypt-prod    ← uncomment after staging validates OK
+```
+
+### Deployment Steps
+
+```bash
+# 1. Deploy cert-manager operator first (CRDs + controller)
+helmfile sync --selector name=cert-manager
+
+# 2. Verify pods are ready
+kubectl get pods -n cert-manager
+
+# 3. Deploy ClusterIssuers + Certificate (staging)
+helmfile sync --selector name=cert-manager-issuers
+
+# 4. Watch certificate status
+kubectl get certificate -n cert-manager
+kubectl describe certificate ingonzal-dev-wildcard -n cert-manager
+
+# Expected when staging validates:
+# Status: True  Reason: Ready  Message: Certificate is up to date and has not expired
+```
+
+### Switch to Production
+
+Once staging shows `Ready`:
+
+1. Edit `manifests/cert-manager/certificate.yaml.gotmpl` — change issuer to `letsencrypt-prod`
+2. Delete the staging secret so cert-manager re-issues:
+   ```bash
+   kubectl delete secret ingonzal-dev-tls -n cert-manager
+   ```
+3. Deploy again:
+   ```bash
+   helmfile sync --selector name=cert-manager-issuers
+   ```
+
+### Subdomain Access
+
+Services use IngressRoutes with the wildcard cert — any subdomain `*.ingonzal.dev` is covered:
+
+| URL | Service |
+|---|---|
+| `https://pihole.ingonzal.dev` | Pi-hole admin |
+| `https://homebridge.ingonzal.dev` | Homebridge UI |
+| `https://cups.ingonzal.dev` | CUPS print server |
+| `https://traefik.ingonzal.dev/dashboard` | Traefik dashboard |
+
+> **LAN resolution**: add the records in Pi-hole → Settings → Local DNS so these URLs resolve to local IPs. See [Network Layout](#-network-layout).
+
+---
+
 ## 🔐 Secrets Management
 
 Secrets are encrypted with **SOPS + AGE** and stored safely in the repository.
@@ -275,6 +359,7 @@ secrets/app.sops.yaml  ←── git committed (encrypted)
 helmfile.yaml values:  .Values.pihole.adminPassword
                        .Values.tailscale.oauth.*
                        .Values.cups.user / .cups.password
+                       .Values.cloudflare.apiToken / .cloudflare.email
 ```
 
 ### Secrets Defined
@@ -288,6 +373,8 @@ helmfile.yaml values:  .Values.pihole.adminPassword
 | `tailscale.oauth.authKey` | Subnet router auth |
 | `cups.user` | CUPS admin credentials |
 | `cups.password` | CUPS admin credentials |
+| `cloudflare.apiToken` | cert-manager DNS-01 challenge (Zone → DNS → Edit) |
+| `cloudflare.email` | Let's Encrypt account email |
 
 ### Creating Your Secrets File from Scratch
 
@@ -311,10 +398,6 @@ tailscale:
 cups:
   user: "admin"
   password: "your-cups-password"
-
-traefik:
-  # Reserved for future cert-manager/ACME integration (not used currently)
-  email: "your@email.com"
 
 cloudflare:
   # API token from Cloudflare dashboard (Zone → DNS → Edit, scoped to ingonzal.dev)
@@ -408,7 +491,7 @@ All environment-specific values live in `values/`:
 ```yaml
 # values/network.yaml
 network:
-  domain: "lan"
+  domain: "ingonzal.dev"
   node:
     zenpi_ip: "192.168.1.130"
   metallb:
@@ -434,6 +517,10 @@ To adapt this to your network, only `values/network.yaml` needs to change.
 | helm-secrets + SOPS/AGE | Secrets in git, decrypted only at deploy time on the Pi |
 | Self-hosted runner on the Pi | No cloud agents needed, Pi runs its own CI/CD |
 | bjw-s/app-template | Flexible Helm chart for custom workloads without writing manifests from scratch |
+| cert-manager + Let's Encrypt DNS-01 | Certs válidos en LAN sin exponer servicios. DNS-01 via Cloudflare API — solo necesita internet 5 min cada 60 días para renovar |
+| Staging issuer primero | Let's Encrypt prod tiene rate limits. Staging valida el flujo completo sin riesgo |
+| Wildcard `*.ingonzal.dev` | Un único cert cubre todos los subdominios actuales y futuros |
+| Resolución DNS local en Pi-hole | `*.ingonzal.dev` resuelve a IPs privadas — Cloudflare nunca interviene en el acceso diario |
 | cups-avahi as Deployment (not DaemonSet) | Avoids duplicate mDNS broadcasts if cluster nodes are added |
 | Longhorn hook with dynamic node name | Portable across reinstalls without hardcoded hostnames |
 | `deploy-*` tag convention | Explicit, traceable deploy history in git log |
@@ -442,6 +529,8 @@ To adapt this to your network, only `values/network.yaml` needs to change.
 
 ## 🔗 Resources
 
+- [cert-manager](https://cert-manager.io/docs/)
+- [Cloudflare DNS API](https://developers.cloudflare.com/api/)
 - [K3s Documentation](https://docs.k3s.io/)
 - [Helmfile](https://helmfile.readthedocs.io/)
 - [helm-secrets](https://github.com/jkroepke/helm-secrets)
