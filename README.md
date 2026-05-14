@@ -268,6 +268,7 @@ helmfile.yaml values:  .Values.pihole.adminPassword
 | Key | Used by |
 |---|---|
 | `pihole.adminPassword` | Pi-hole admin panel |
+| `pihole.adminPasswordHash` | Pi-hole password hash (bcrypt of adminPassword) |
 | `tailscale.oauth.clientId` | Tailscale operator auth |
 | `tailscale.oauth.clientSecret` | Tailscale operator auth |
 | `tailscale.oauth.authKey` | Subnet router auth |
@@ -275,24 +276,73 @@ helmfile.yaml values:  .Values.pihole.adminPassword
 | `cups.password` | CUPS admin credentials |
 | `traefik.email` | cert-manager ACME |
 
+### Creating Your Secrets File from Scratch
+
+Before encrypting, create a plaintext template (`secrets/app.yaml`) — **never commit this file**:
+
+```yaml
+# secrets/app.yaml  ← ADD TO .gitignore, NEVER COMMIT
+pihole:
+  adminPassword: "your-pihole-password"
+  # Generate the hash with: htpasswd -bnBC 10 "" your-pihole-password | tr -d ':\n'
+  adminPasswordHash: "$2y$10$..."
+
+tailscale:
+  oauth:
+    # Create an OAuth client at https://login.tailscale.com/admin/settings/oauth
+    clientId: "tskey-client-..."
+    clientSecret: "tskey-secret-..."
+    # Create a reusable auth key at https://login.tailscale.com/admin/settings/keys
+    authKey: "tskey-auth-..."
+
+cups:
+  user: "admin"
+  password: "your-cups-password"
+
+traefik:
+  # Email for Let's Encrypt ACME notifications
+  email: "your@email.com"
+```
+
+Then encrypt it with your AGE key and store it in the expected path:
+
+```bash
+# 1. Generate your AGE keypair (wizard does this automatically)
+age-keygen -o ~/.config/age/key.txt
+export SOPS_AGE_KEY_FILE=~/.config/age/key.txt
+
+# 2. Get your public key (add it to .sops.yaml)
+age-keygen -y ~/.config/age/key.txt
+# → age1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# 3. Update .sops.yaml with your public key
+# creation_rules:
+#   - path_regex: secrets/.*
+#     age: "age1xxxx..."   ← replace with your public key
+
+# 4. Encrypt
+sops --encrypt secrets/app.yaml > secrets/app.sops.yaml
+
+# 5. Delete the plaintext file
+rm secrets/app.yaml
+```
+
+> ⚠️ `secrets/app.yaml` (plaintext) must be in `.gitignore`. Only `secrets/app.sops.yaml` (encrypted) is safe to commit.
+
+### Editing Encrypted Secrets
+
+```bash
+# Opens in $EDITOR, saves re-encrypted
+sops secrets/app.sops.yaml
+```
+
 ### Key Location
 
 The AGE private key must be present at:
 ```
 ~/.config/age/key.txt
 ```
-And exported as `SOPS_AGE_KEY_FILE` in the runner's `.env` file.
-
-### Encrypting a Secret
-
-```bash
-# Edit encrypted file
-sops secrets/app.sops.yaml
-
-# Or encrypt from scratch
-sops --encrypt --age $(cat .sops.yaml | grep recipient | awk '{print $2}') \
-  plaintext.yaml > secrets/app.sops.yaml
-```
+And exported as `SOPS_AGE_KEY_FILE` in the runner's `.env` file (the wizard sets this automatically).
 
 ---
 
