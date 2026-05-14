@@ -94,10 +94,10 @@
 │  │  │  │   CUPS   │  │   Avahi    │  │   Traefik   │  │   │    │
 │  │  │  │ (HP USB) │  │  (mDNS)    │  │  (Ingress)  │  │   │    │
 │  │  │  └──────────┘  └────────────┘  └─────────────┘  │   │    │
-│  │  │  ┌──────────┐  ┌────────────┐                    │   │    │
-│  │  │  │ Longhorn │  │cert-manager│                    │   │    │
-│  │  │  │ (storage)│  │  (TLS)     │                    │   │    │
-│  │  │  └──────────┘  └────────────┘                    │   │    │
+│  │  │  ┌──────────┐                                    │   │    │
+│  │  │  │ Longhorn │                                    │   │    │
+│  │  │  │ (storage)│                                    │   │    │
+│  │  │  └──────────┘                                    │   │    │
 │  │  │                                                   │   │    │
 │  │  │  🤖 GitHub Actions Runner (self-hosted)           │   │    │
 │  │  └───────────────────────────────────────────────────┘   │    │
@@ -131,7 +131,6 @@ Developer                GitHub                 Raspberry Pi
 |---|---|---|---|---|
 | `metallb` | `metallb-system` | metallb/metallb | — | Layer 2 load balancer |
 | `metallb-config` | `metallb-system` | bedag/raw | — | IP pool + L2Advertisement |
-| `cert-manager` | `cert-manager` | jetstack/cert-manager | — | TLS certificate automation |
 | `longhorn` | `longhorn-system` | longhorn/longhorn | — | Distributed block storage |
 | `traefik` | `traefik` | traefik/traefik | `192.168.1.50` | Ingress controller (HTTP→HTTPS) |
 | `traefik-resources` | `traefik` | bedag/raw | — | IngressRoutes + middlewares |
@@ -215,7 +214,7 @@ git tag deploy-20250514 && git push origin deploy-20250514
 **Flow:**
 1. Detects changed files (`values/`, `manifests/`, `helmfile.yaml`)
 2. Maps changes → affected releases (smart change detection)
-3. Deploys in dependency order: `metallb → cert-manager → longhorn → traefik → pihole → homebridge → tailscale → cups-config → cups → cups-avahi-service → cups-avahi`
+3. Deploys in dependency order: `metallb → longhorn → traefik → pihole → homebridge → tailscale → cups-config → cups → cups-avahi-service → cups-avahi`
 4. Verifies pod health post-deploy
 5. Auto-rollback if the new revision is unhealthy
 
@@ -231,7 +230,7 @@ Manually trigger a full redeploy of a specific service stack:
 | `tailscale` | tailscale |
 | `cups` | cups-config, cups, cups-avahi-service, cups-avahi |
 | `ingresses` | traefik-resources |
-| `networking-only` | metallb, metallb-config, cert-manager |
+| `networking-only` | metallb, metallb-config |
 
 ### `full-reset.yaml` — Complete Reset
 
@@ -260,7 +259,6 @@ secrets/app.sops.yaml  ←── git committed (encrypted)
 helmfile.yaml values:  .Values.pihole.adminPassword
                        .Values.tailscale.oauth.*
                        .Values.cups.user / .cups.password
-                       .Values.traefik.email
 ```
 
 ### Secrets Defined
@@ -274,7 +272,6 @@ helmfile.yaml values:  .Values.pihole.adminPassword
 | `tailscale.oauth.authKey` | Subnet router auth |
 | `cups.user` | CUPS admin credentials |
 | `cups.password` | CUPS admin credentials |
-| `traefik.email` | cert-manager ACME |
 
 ### Creating Your Secrets File from Scratch
 
@@ -300,7 +297,7 @@ cups:
   password: "your-cups-password"
 
 traefik:
-  # Email for Let's Encrypt ACME notifications
+  # Reserved for future cert-manager/ACME integration (not used currently)
   email: "your@email.com"
 ```
 
