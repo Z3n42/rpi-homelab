@@ -10,6 +10,7 @@
   <img src="https://img.shields.io/badge/GitHub_Actions-Self--Hosted_Runner-2088FF?style=for-the-badge&logo=githubactions&logoColor=white" alt="GitHub Actions"/>
   <img src="https://img.shields.io/badge/SOPS-AGE_Secrets-FF5733?style=for-the-badge&logo=gnupg&logoColor=white" alt="SOPS"/>
   <img src="https://img.shields.io/badge/Let's_Encrypt-cert--manager-003A70?style=for-the-badge&logo=letsencrypt&logoColor=white" alt="Let's Encrypt"/>
+  <img src="https://img.shields.io/badge/ExternalDNS-Pi--hole_Auto_DNS-008080?style=for-the-badge&logo=kubernetes&logoColor=white" alt="ExternalDNS"/>
   <img src="https://img.shields.io/badge/Raspberry_Pi_5-ARM64-A22846?style=for-the-badge&logo=raspberrypi&logoColor=white" alt="Raspberry Pi 5"/>
 </p>
 
@@ -64,7 +65,7 @@
 | Load Balancer | MetalLB (Layer 2) |
 | Ingress | Traefik v3 |
 | TLS | cert-manager + Let's Encrypt (DNS-01 via Cloudflare) |
-| DNS | Pi-hole + Unbound |
+| DNS | Pi-hole + Unbound (recursive) + ExternalDNS (auto records) |
 | VPN | Tailscale Subnet Router |
 | Home automation | Homebridge (Apple HomeKit bridge) |
 | Printing | CUPS + Avahi (AirPrint) |
@@ -137,11 +138,13 @@ Developer                GitHub                 Raspberry Pi
 | `longhorn` | `longhorn-system` | longhorn/longhorn | — | Distributed block storage |
 | `cert-manager` | `cert-manager` | jetstack/cert-manager | — | TLS certificate automation |
 | `cert-manager-issuers` | `cert-manager` | bedag/raw | — | ClusterIssuer (Let's Encrypt) + wildcard cert `*.ingonzal.dev` |
-| `traefik` | `traefik` | traefik/traefik | `192.168.1.50` | Ingress controller (HTTP→HTTPS) |
-| `traefik-resources` | `traefik` | bedag/raw | — | IngressRoutes + middlewares |
-| `tailscale` | `tailscale` | bedag/raw | — | VPN subnet router |
-| `pihole` | `pihole` | bedag/raw | `.52/.53/.54` | DNS ad-blocker + Unbound resolver |
+| `traefik` | `traefik-system` | traefik/traefik | `192.168.1.50` | Ingress controller (HTTP→HTTPS) |
+| `traefik-resources` | `traefik-system` | bedag/raw | — | TLSStore, IngressRoutes, middlewares |
+| `tailscale` | `tailscale` | tailscale/tailscale-operator | — | VPN subnet router |
+| `pihole-stack` | `pihole` | bedag/raw | `.52/.53` | DNS ad-blocker + Unbound resolver |
 | `homebridge` | `homebridge` | bjw-s/app-template | `192.168.1.55` | Apple HomeKit bridge |
+| `external-dns-secret` | `external-dns` | bedag/raw | — | Pi-hole API password Secret |
+| `external-dns` | `external-dns` | external-dns/external-dns | — | Automatic DNS records via Pi-hole |
 | `cups-config` | `printing` | dysnix/raw | — | CUPS printer configuration |
 | `cups` | `printing` | bjw-s/app-template | `192.168.1.51` | CUPS print server (HP P1005) |
 | `cups-avahi-service` | `printing` | dysnix/raw | — | AirPrint Avahi service definition |
@@ -155,7 +158,7 @@ Developer                GitHub                 Raspberry Pi
 rpi-homelab/
 ├── .github/
 │   └── workflows/
-│       ├── deploy.yaml          # Main deploy (tag-triggered + manual)
+│       ├── deploy.yaml          # Main deploy (tag-triggered, change-detected)
 │       ├── redeploy.yaml        # Manual targeted redeploy
 │       ├── full-reset.yaml      # Nuclear reset (requires confirmation)
 │       ├── service-cleanup.yaml # PVC-preserving cleanup
@@ -167,8 +170,8 @@ rpi-homelab/
 ├── helmfile.yaml                # Single source of truth for all releases
 │
 ├── manifests/
-│   ├── cert-manager/            # ClusterIssuer (staging + prod) + wildcard Certificate
-│   ├── ingresses/               # Traefik IngressRoutes (dashboard, CUPS, Homebridge)
+│   ├── cert-manager/            # ClusterIssuers (staging + prod) + wildcard Certificate
+│   ├── ingresses/               # Traefik IngressRoutes (dashboard, CUPS, Homebridge, Pi-hole)
 │   ├── pihole/                  # Pi-hole + Unbound full manifest (gotmpl)
 │   └── tailscale/               # Tailscale subnet router manifest
 │
@@ -176,12 +179,10 @@ rpi-homelab/
 │   └── app.sops.yaml            # SOPS/AGE encrypted secrets (safe to commit)
 │
 ├── values/
-│   ├── network.yaml             # All IPs and domain config
-│   ├── homebridge.yaml.gotmpl   # Homebridge config template
+│   ├── network.yaml             # All IPs and domain config (single source of truth)
 │   ├── longhorn.yaml            # Longhorn storage config
-│   ├── metallb.yaml.gotmpl      # MetalLB pool template
-│   ├── metallb-config.yaml.gotmpl
-│   └── network.yaml
+│   ├── metallb.yaml.gotmpl      # MetalLB IPAddressPool template
+│   └── metallb-config.yaml.gotmpl # MetalLB L2Advertisement template
 │
 └── .sops.yaml                   # SOPS creation rules (AGE recipient)
 ```
@@ -205,19 +206,25 @@ All service IPs are defined in `values/network.yaml` and referenced throughout `
 
 > DNS resolution: Pi-hole → Unbound → root servers (recursive, no upstream ISP DNS)
 
-### 🏠 Pi-hole Local DNS Records (one-time manual setup)
+### 🤖 Automatic DNS via ExternalDNS
 
-For LAN access to work with `ingonzal.dev` subdomains, add these records in Pi-hole:
-**Settings → Local DNS → DNS Records**
+DNS records for all services are **created automatically** by ExternalDNS watching Traefik IngressRoutes.  
+Each IngressRoute has the annotation:
 
-| Domain | IP |
-|---|---|
-| `pihole.ingonzal.dev` | `192.168.1.52` |
-| `homebridge.ingonzal.dev` | `192.168.1.55` |
-| `cups.ingonzal.dev` | `192.168.1.51` |
-| `traefik.ingonzal.dev` | `192.168.1.50` |
+```yaml
+external-dns.alpha.kubernetes.io/target: "192.168.1.50"
+```
 
-> This ensures all LAN traffic resolves locally to the service IPs — Cloudflare is never queried for internal access.
+ExternalDNS syncs this to Pi-hole's local DNS every minute — no manual record management needed.
+
+| Domain | Resolved IP | Managed by |
+|---|---|---|
+| `traefik.ingonzal.dev` | `192.168.1.50` | ExternalDNS (auto) |
+| `pihole.ingonzal.dev` | `192.168.1.50` | ExternalDNS (auto) |
+| `homebridge.ingonzal.dev` | `192.168.1.50` | ExternalDNS (auto) |
+| `cups.ingonzal.dev` | `192.168.1.50` | ExternalDNS (auto) |
+
+> All subdomains resolve to the Traefik LoadBalancer IP (`192.168.1.50`). Traefik routes to the correct backend service based on the hostname. Cloudflare is never queried for internal access.
 
 ---
 
@@ -232,9 +239,9 @@ git tag deploy-20250514 && git push origin deploy-20250514
 ```
 
 **Flow:**
-1. Detects changed files (`values/`, `manifests/`, `helmfile.yaml`)
+1. Detects changed files (`values/`, `manifests/`, `helmfile.yaml`, `secrets/`)
 2. Maps changes → affected releases (smart change detection)
-3. Deploys in dependency order: `metallb → longhorn → cert-manager → cert-manager-issuers → traefik → pihole → homebridge → tailscale → cups-config → cups → cups-avahi-service → cups-avahi`
+3. Deploys in dependency order: `metallb-config → cert-manager-issuers → traefik → traefik-resources → pihole-stack → homebridge → tailscale → external-dns-secret → external-dns → cups-config → cups → cups-avahi-service → cups-avahi`
 4. Verifies pod health post-deploy
 5. Auto-rollback if the new revision is unhealthy
 
@@ -245,11 +252,11 @@ Manually trigger a full redeploy of a specific service stack:
 | Target | Releases deployed |
 |---|---|
 | `all` | Everything |
-| `pihole` | pihole |
+| `pihole` | pihole-stack |
 | `homebridge` | homebridge |
 | `tailscale` | tailscale |
 | `cups` | cups-config, cups, cups-avahi-service, cups-avahi |
-| `ingresses` | traefik-resources |
+| `ingresses` | traefik-resources, external-dns-secret, external-dns |
 | `networking-only` | metallb, metallb-config, cert-manager, cert-manager-issuers |
 
 ### `full-reset.yaml` — Complete Reset
@@ -281,20 +288,22 @@ cert-manager (in cluster)
     │
     ├─ issues wildcard cert  *.ingonzal.dev
     │
-    └─ stores cert as Secret ingonzal-dev-tls in cert-manager namespace
+    └─ stores cert as Secret ingonzal-dev-tls in traefik-system namespace
            │
-           └─ Traefik references it in all IngressRoutes (tls.secretName)
+           └─ TLSStore "default" in traefik-system references this Secret
+                  │
+                  └─ All IngressRoutes use `tls: {}` (inherit from default store)
 ```
 
 ### Issuer Strategy: Staging First
 
 Let's Encrypt enforces **rate limits on prod** (5 failed certs per domain per hour). The setup uses **staging first** to validate the full flow before switching to prod.
 
-```
-manifests/cert-manager/certificate.yaml.gotmpl
-  issuerRef:
-    name: letsencrypt-staging   ← start here
-    # name: letsencrypt-prod    ← uncomment after staging validates OK
+```yaml
+# manifests/cert-manager/cert-manager-issuers.yaml.gotmpl
+issuerRef:
+  name: letsencrypt-staging   # start here
+  # name: letsencrypt-prod    # switch after staging validates OK
 ```
 
 ### Deployment Steps
@@ -310,8 +319,8 @@ kubectl get pods -n cert-manager
 helmfile sync --selector name=cert-manager-issuers
 
 # 4. Watch certificate status
-kubectl get certificate -n cert-manager
-kubectl describe certificate ingonzal-dev-wildcard -n cert-manager
+kubectl get certificate -n traefik-system
+kubectl describe certificate ingonzal-dev-wildcard -n traefik-system
 
 # Expected when staging validates:
 # Status: True  Reason: Ready  Message: Certificate is up to date and has not expired
@@ -321,10 +330,10 @@ kubectl describe certificate ingonzal-dev-wildcard -n cert-manager
 
 Once staging shows `Ready`:
 
-1. Edit `manifests/cert-manager/certificate.yaml.gotmpl` — change issuer to `letsencrypt-prod`
+1. Edit `manifests/cert-manager/cert-manager-issuers.yaml.gotmpl` — change issuer to `letsencrypt-prod`
 2. Delete the staging secret so cert-manager re-issues:
    ```bash
-   kubectl delete secret ingonzal-dev-tls -n cert-manager
+   kubectl delete secret ingonzal-dev-tls -n traefik-system
    ```
 3. Deploy again:
    ```bash
@@ -517,10 +526,13 @@ To adapt this to your network, only `values/network.yaml` needs to change.
 | helm-secrets + SOPS/AGE | Secrets in git, decrypted only at deploy time on the Pi |
 | Self-hosted runner on the Pi | No cloud agents needed, Pi runs its own CI/CD |
 | bjw-s/app-template | Flexible Helm chart for custom workloads without writing manifests from scratch |
-| cert-manager + Let's Encrypt DNS-01 | Certs válidos en LAN sin exponer servicios. DNS-01 via Cloudflare API — solo necesita internet 5 min cada 60 días para renovar |
-| Staging issuer primero | Let's Encrypt prod tiene rate limits. Staging valida el flujo completo sin riesgo |
-| Wildcard `*.ingonzal.dev` | Un único cert cubre todos los subdominios actuales y futuros |
-| Resolución DNS local en Pi-hole | `*.ingonzal.dev` resuelve a IPs privadas — Cloudflare nunca interviene en el acceso diario |
+| cert-manager + Let's Encrypt DNS-01 | Valid certs on LAN without exposing services. DNS-01 via Cloudflare API — only needs internet ~5 min every 60 days to renew |
+| Staging issuer first | Let's Encrypt prod has rate limits — staging validates the full flow without risk |
+| Wildcard `*.ingonzal.dev` | One cert covers all current and future subdomains |
+| Cert in `traefik-system` + TLSStore | Single cert accessible by all IngressRoutes via `tls: {}` — no cross-namespace secret sharing needed |
+| ExternalDNS with Pi-hole provider | DNS records created automatically when IngressRoutes are deployed — zero manual Pi-hole config |
+| ExternalDNS `registry: noop` | Pi-hole only supports A/AAAA/CNAME records — no TXT ownership records possible |
+| ExternalDNS password via Secret | Avoids exposing Pi-hole API password as a CLI argument in the pod spec |
 | cups-avahi as Deployment (not DaemonSet) | Avoids duplicate mDNS broadcasts if cluster nodes are added |
 | Longhorn hook with dynamic node name | Portable across reinstalls without hardcoded hostnames |
 | `deploy-*` tag convention | Explicit, traceable deploy history in git log |
@@ -529,6 +541,7 @@ To adapt this to your network, only `values/network.yaml` needs to change.
 
 ## 🔗 Resources
 
+- [ExternalDNS](https://kubernetes-sigs.github.io/external-dns/)
 - [cert-manager](https://cert-manager.io/docs/)
 - [Cloudflare DNS API](https://developers.cloudflare.com/api/)
 - [K3s Documentation](https://docs.k3s.io/)
