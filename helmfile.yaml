@@ -124,13 +124,12 @@ releases:
     secrets:
       - secrets/app.sops.yaml
     values:
-      - resources:
-          - {{ tpl (readFile "manifests/cert-manager/clusterissuer.yaml.gotmpl") . | indent 12 | trim }}
-          - {{ tpl (readFile "manifests/cert-manager/certificate.yaml.gotmpl") . | indent 12 | trim }}
+      - manifests/cert-manager/cert-manager-issuers.yaml.gotmpl
 
   # -----------------------------
   # TRAEFIK (CRDs first, then deployment)
   # -----------------------------
+  - name: traefik-crds
     namespace: traefik-system
     createNamespace: true
     chart: traefik/traefik
