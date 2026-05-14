@@ -15,6 +15,8 @@ repositories:
     url: https://traefik.github.io/charts
   - name: jetstack
     url: https://charts.jetstack.io
+  - name: external-dns
+    url: https://kubernetes-sigs.github.io/external-dns/
 
 ---
 environments:
@@ -365,11 +367,42 @@ releases:
       - traefik-system/traefik
       - printing/cups
       - homebridge/homebridge
+      - pihole/pihole-stack
     values:
       - resources:
           - {{ tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") . | indent 12 | trim }}
           - {{ tpl (readFile "manifests/ingresses/cups-ingress.yaml.gotmpl") . | indent 12 | trim }}
           - {{ tpl (readFile "manifests/ingresses/homebridge-ingress.yaml.gotmpl") . | indent 12 | trim }}
+          - {{ tpl (readFile "manifests/ingresses/pihole-ingress.yaml.gotmpl") . | indent 12 | trim }}
+
+  # -----------------------------
+  # EXTERNAL-DNS (Pi-hole auto DNS)
+  # -----------------------------
+  - name: external-dns
+    namespace: external-dns
+    chart: external-dns/external-dns
+    createNamespace: true
+    needs:
+      - traefik-system/traefik-resources
+      - pihole/pihole-stack
+    secrets:
+      - secrets/app.sops.yaml
+    values:
+      - provider:
+          name: pihole
+      - extraArgs:
+          - "--pihole-server=http://pihole-web.pihole.svc.cluster.local"
+          - "--pihole-password={{ .Values.pihole.adminPassword }}"
+          - "--source=traefik-proxy"
+          - "--domain-filter=ingonzal.dev"
+          - "--txt-owner-id=zenpi"
+          - "--log-level=info"
+          - "--interval=1m"
+      - rbac:
+          create: true
+      - serviceAccount:
+          create: true
+          name: external-dns
 
   # -----------------------------
   # CLEANUP TOOLS

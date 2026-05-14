@@ -60,6 +60,7 @@ jobs:
                 ;;
               manifests/ingresses/*)
                 SERVICES+=("traefik-resources")
+                SERVICES+=("external-dns")
                 ;;
               manifests/cert-manager/*|values/network.yaml)
                 SERVICES+=("cert-manager-issuers")
@@ -134,6 +135,7 @@ jobs:
                 cups-avahi-service) rollback_if_needed "cups-avahi-service" "printing" ;;
                 cups-avahi)   rollback_if_needed "cups-avahi"         "printing" ;;
                 traefik-resources) rollback_if_needed "traefik-resources" "traefik-system" ;;
+                external-dns)     rollback_if_needed "external-dns"      "external-dns" ;;
               esac
             done
 

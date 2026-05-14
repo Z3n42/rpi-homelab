@@ -58,12 +58,12 @@ jobs:
           helmfile sync --selector name=longhorn
 
           case "$TARGET" in
-            all) SERVICES=("pihole-stack" "homebridge" "tailscale" "cert-manager-issuers" "cups-config" "cups" "cups-avahi-service" "cups-avahi" "traefik-resources") ;;
+            all) SERVICES=("pihole-stack" "homebridge" "tailscale" "cert-manager-issuers" "cups-config" "cups" "cups-avahi-service" "cups-avahi" "traefik-resources" "external-dns") ;;
             pihole) SERVICES=("pihole-stack") ;;
             homebridge) SERVICES=("homebridge") ;;
             tailscale) SERVICES=("tailscale") ;;
             cups) SERVICES=("cups-config" "cups" "cups-avahi-service" "cups-avahi") ;;
-            ingresses) SERVICES=("traefik-resources") ;;
+            ingresses) SERVICES=("traefik-resources" "external-dns") ;;
             networking-only) SERVICES=("cert-manager" "cert-manager-issuers") ;;
           esac
 
@@ -89,6 +89,7 @@ jobs:
                 cups-avahi-service) rollback_if_needed "cups-avahi-service" "printing" ;;
                 cups-avahi)   rollback_if_needed "cups-avahi"         "printing" ;;
                 traefik-resources) rollback_if_needed "traefik-resources" "traefik-system" ;;
+                external-dns)     rollback_if_needed "external-dns"      "external-dns" ;;
               esac
             done
 

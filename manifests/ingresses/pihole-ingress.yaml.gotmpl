@@ -1,8 +1,8 @@
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
-  name: homebridge-ui
-  namespace: homebridge
+  name: pihole-ui
+  namespace: pihole
   annotations:
     external-dns.alpha.kubernetes.io/target: "{{ index .Values \"network\" \"services\" \"traefik\" \"ip\" }}"
 spec:
@@ -10,11 +10,10 @@ spec:
     - web
     - websecure
   routes:
-    - match: Host(`homebridge.{{ index .Values "network" "domain" }}`)
+    - match: Host(`pihole.{{ index .Values "network" "domain" }}`)
       kind: Rule
       services:
-        - name: homebridge
-          port: 8581
-
+        - name: pihole-web
+          port: 80
   tls:
     secretName: ingonzal-dev-tls

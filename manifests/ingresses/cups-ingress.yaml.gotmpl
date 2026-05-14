@@ -3,6 +3,8 @@ kind: IngressRoute
 metadata:
   name: cups-admin-ui
   namespace: printing
+  annotations:
+    external-dns.alpha.kubernetes.io/target: "{{ index .Values \"network\" \"services\" \"traefik\" \"ip\" }}"
 spec:
   entryPoints:
     - web

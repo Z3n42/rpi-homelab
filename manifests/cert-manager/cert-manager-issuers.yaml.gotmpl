@@ -54,7 +54,7 @@ resources:
           reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
           reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: "traefik-system,pihole,homebridge,printing"
       issuerRef:
-        name: letsencrypt-staging
+        name: letsencrypt-prod
         kind: ClusterIssuer
       commonName: "*.ingonzal.dev"
       dnsNames:
