@@ -63,6 +63,7 @@ jobs:
                 ;;
               manifests/tailscale/*)
                 SERVICES+=("tailscale")
+                SERVICES+=("tailscale-subnet-router")
                 ;;
               manifests/ingresses/*)
                 SERVICES+=("traefik-resources")

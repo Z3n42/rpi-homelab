@@ -742,8 +742,6 @@ releases:
     needs:
       - printing/cups
       - printing/cups-avahi-service
-    secrets:
-      - secrets/app.sops.yaml
     values:
       - controllers:
           main:

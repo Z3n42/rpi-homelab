@@ -234,6 +234,13 @@ resources:
                 periodSeconds: 30
                 timeoutSeconds: 5
                 failureThreshold: 3
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"
 
             - name: unbound
               image: crazymax/unbound:1.24.0
@@ -323,13 +330,11 @@ resources:
       selector:
         app: pihole
       type: LoadBalancer
+      externalTrafficPolicy: Local
       ports:
         - name: http
           port: 80
           targetPort: 80
-        - name: https
-          port: 443
-          targetPort: 443
 
   - apiVersion: batch/v1
     kind: Job
