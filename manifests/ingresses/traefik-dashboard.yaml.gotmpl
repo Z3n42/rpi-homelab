@@ -4,13 +4,13 @@ metadata:
   name: traefik-dashboard
   namespace: traefik-system
   annotations:
-    external-dns.alpha.kubernetes.io/target: "{{ index .Values \"network\" \"services\" \"traefik\" \"ip\" }}"
+    external-dns.alpha.kubernetes.io/target: "{{ .Values.network.services.traefik.ip }}"
 spec:
   entryPoints:
     - web
     - websecure
   routes:
-    - match: Host(`traefik.{{ index .Values "network" "domain" }}`) && Path(`/`)
+    - match: Host(`traefik.{{ .Values.network.domain }}`) && Path(`/`)
       kind: Rule
       services:
         - name: api@internal
@@ -18,7 +18,7 @@ spec:
       middlewares:
         - name: redirect-to-dashboard
           namespace: traefik-system 
-    - match: Host(`traefik.{{ index .Values "network" "domain" }}`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))
+    - match: Host(`traefik.{{ .Values.network.domain }}`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))
       kind: Rule
       services:
         - name: api@internal

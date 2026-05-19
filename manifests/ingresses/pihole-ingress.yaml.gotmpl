@@ -4,13 +4,13 @@ metadata:
   name: pihole-ui
   namespace: pihole
   annotations:
-    external-dns.alpha.kubernetes.io/target: "{{ index .Values \"network\" \"services\" \"traefik\" \"ip\" }}"
+    external-dns.alpha.kubernetes.io/target: "{{ .Values.network.services.traefik.ip }}"
 spec:
   entryPoints:
     - web
     - websecure
   routes:
-    - match: Host(`pihole.{{ index .Values "network" "domain" }}`)
+    - match: Host(`pihole.{{ .Values.network.domain }}`)
       kind: Rule
       services:
         - name: pihole-web

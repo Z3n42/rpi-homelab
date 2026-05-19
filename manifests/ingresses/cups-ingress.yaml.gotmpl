@@ -4,13 +4,13 @@ metadata:
   name: cups-admin-ui
   namespace: printing
   annotations:
-    external-dns.alpha.kubernetes.io/target: "{{ index .Values \"network\" \"services\" \"traefik\" \"ip\" }}"
+    external-dns.alpha.kubernetes.io/target: "{{ .Values.network.services.traefik.ip }}"
 spec:
   entryPoints:
     - web
     - websecure
   routes:
-    - match: Host(`cups.{{ index .Values "network" "domain" }}`)
+    - match: Host(`cups.{{ .Values.network.domain }}`)
       kind: Rule
       services:
         - name: cups

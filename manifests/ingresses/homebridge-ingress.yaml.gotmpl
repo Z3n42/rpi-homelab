@@ -4,13 +4,13 @@ metadata:
   name: homebridge-ui
   namespace: homebridge
   annotations:
-    external-dns.alpha.kubernetes.io/target: "{{ index .Values \"network\" \"services\" \"traefik\" \"ip\" }}"
+    external-dns.alpha.kubernetes.io/target: "{{ .Values.network.services.traefik.ip }}"
 spec:
   entryPoints:
     - web
     - websecure
   routes:
-    - match: Host(`homebridge.{{ index .Values "network" "domain" }}`)
+    - match: Host(`homebridge.{{ .Values.network.domain }}`)
       kind: Rule
       services:
         - name: homebridge
