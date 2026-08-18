@@ -262,6 +262,7 @@ releases:
   - name: tailscale
     namespace: tailscale
     chart: tailscale/tailscale-operator
+    version: "1.102.2"
     needs:
       - metallb-system/metallb
       - tailscale/tailscale-oauth-secret
