@@ -1,5 +1,7 @@
 name: ⏪ Rollback to Backup Tag
 
+run-name: ${{ inputs.dry_run && '🔎 DRY RUN' || '⏪ APPLY' }} · Rollback to ${{ inputs.ref }}
+
 # Redeploys the whole helmfile as it was at a backup-YYYYMMDD tag.
 # It rolls back configuration only: Longhorn data and host config (k3s,
 # kubelet, logind) are not touched. Secrets in secrets/app.sops.yaml go back

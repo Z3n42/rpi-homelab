@@ -1,5 +1,7 @@
 name: 🚀 Safe Homelab Redeploy
 
+run-name: ${{ inputs.dry_run && '🔎 DRY RUN' || '🚀 APPLY' }} · Redeploy ${{ inputs.target }}
+
 on:
   workflow_dispatch:
     inputs:
