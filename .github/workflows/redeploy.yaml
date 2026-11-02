@@ -121,8 +121,13 @@ jobs:
         env:
           HEALTH_NS: ${{ steps.resolve.outputs.health_ns }}
         run: |
+          # Job pods (pihole init/seed) finish as Completed and never become Ready,
+          # so they are excluded from the Ready wait and checked as Jobs instead.
           for ns in $HEALTH_NS; do
-            kubectl wait --for=condition=Ready pod --all -n "$ns" \
-              --field-selector=status.phase!=Succeeded --timeout=300s
+            kubectl wait --for=condition=Ready pod -n "$ns" -l '!job-name' \
+              --field-selector='status.phase!=Succeeded,status.phase!=Failed' --timeout=300s
+            if [ -n "$(kubectl get job -n "$ns" -o name)" ]; then
+              kubectl wait --for=condition=complete job --all -n "$ns" --timeout=300s
+            fi
           done
           kubectl get svc -A --field-selector spec.type=LoadBalancer
