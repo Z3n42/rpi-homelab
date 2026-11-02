@@ -1,0 +1,99 @@
+name: ⏪ Rollback to Backup Tag
+
+# Redeploys the whole helmfile as it was at a backup-YYYYMMDD tag.
+# It rolls back configuration only: Longhorn data and host config (k3s,
+# kubelet, logind) are not touched. Secrets in secrets/app.sops.yaml go back
+# to the tagged version too.
+#
+# The workflow always runs from main; only the helmfile, manifests and
+# secrets are taken from the tag. Old tags have no `stack` labels, so this
+# applies the full helmfile without selectors.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Backup tag (backup-YYYYMMDD) or "latest"'
+        required: true
+        default: 'latest'
+      dry_run:
+        description: "Only show the diff, do not apply"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homelab-cluster
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  rollback:
+    runs-on: self-hosted
+    timeout-minutes: 30
+    env:
+      REF: ${{ inputs.ref }}
+      DRY_RUN: ${{ inputs.dry_run }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🎯 Resolve backup tag
+        run: |
+          if [ "$REF" = "latest" ]; then
+            REF=$(git tag -l 'backup-[0-9]*' | sort | tail -n 1)
+          fi
+          if ! [[ "$REF" =~ ^backup-[0-9]{8}$ ]]; then
+            echo "❌ '$REF' is not a backup-YYYYMMDD tag"
+            exit 1
+          fi
+          git rev-parse -q --verify "refs/tags/$REF^{commit}" >/dev/null \
+            || { echo "❌ Tag $REF does not exist"; exit 1; }
+          git merge-base --is-ancestor "refs/tags/$REF" origin/main \
+            || { echo "❌ Tag $REF is not part of main"; exit 1; }
+          echo "ROLLBACK_REF=$REF" >> "$GITHUB_ENV"
+          echo "Rolling back to $REF:"
+          git log -1 --format='%h %ad %s' --date=short "refs/tags/$REF"
+
+      - name: 🔐 Compare secrets with the tag
+        run: |
+          if git diff --quiet "refs/tags/$ROLLBACK_REF" HEAD -- secrets/app.sops.yaml; then
+            echo "✅ secrets/app.sops.yaml is identical to $ROLLBACK_REF"
+          else
+            echo "⚠️ secrets/app.sops.yaml differs from $ROLLBACK_REF: the rollback will restore the OLD secret values."
+          fi
+
+      - name: ⏪ Checkout the tag
+        run: git checkout --detach "refs/tags/$ROLLBACK_REF"
+
+      - name: 🔍 Verify Environment
+        run: |
+          kubectl version --client
+          helmfile --version
+          sops --version
+          sops -d secrets/app.sops.yaml >/dev/null \
+            && echo "✅ The age key can decrypt the secrets at $ROLLBACK_REF"
+
+      - name: 🔎 Diff
+        run: helmfile diff --suppress-secrets --context 3
+
+      - name: 🚀 Apply
+        if: ${{ env.DRY_RUN != 'true' }}
+        run: helmfile apply --suppress-secrets --skip-diff-on-install
+
+      - name: 🔍 Final Health Check
+        if: ${{ env.DRY_RUN != 'true' }}
+        run: |
+          kubectl get svc -A --field-selector spec.type=LoadBalancer
+          for ns in metallb-system longhorn-system traefik-system pihole homebridge tailscale printing; do
+            kubectl wait --for=condition=Ready pod --all -n "$ns" \
+              --field-selector=status.phase!=Succeeded --timeout=300s
+          done

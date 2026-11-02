@@ -13,17 +13,39 @@ on:
           - 'pihole'
           - 'homebridge'
           - 'tailscale'
-          - 'cups' 
+          - 'cups'
           - 'ingresses'
           - 'networking-only'
+      restart:
+        description: 'Rolling restart of the target pods after applying'
+        type: boolean
+        default: true
+      dry_run:
+        description: 'Only show the diff, do not apply or restart'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homelab-cluster
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   redeploy:
     runs-on: self-hosted
+    timeout-minutes: 30
+    env:
+      TARGET: ${{ inputs.target }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: 🔍 Verify Environment
         run: |
@@ -31,116 +53,74 @@ jobs:
           helmfile --version
           sops --version
 
-      - name: 🚀 Deploy with Helmfile (with rollback safeguard)
-        shell: bash
+      - name: 🎯 Resolve target
+        id: resolve
         run: |
-          set -euo pipefail
-
-          rollback_if_needed() {
-            local RELEASE=$1
-            local NS=$2
-
-            PREV=$(helm history "$RELEASE" -n "$NS" | awk 'NR==2{print $1}')
-            NEW=$(helm history "$RELEASE" -n "$NS" | awk 'NR==2{print $1}')
-
-            if [ "$NEW" -gt "$PREV" ]; then
-              echo "⚠️ Rolling back $RELEASE to revision $PREV"
-              helm rollback "$RELEASE" "$PREV" -n "$NS"
-            else
-              echo "ℹ️ No rollback needed for $RELEASE"
-            fi
-          }
-
-          TARGET="${{ github.event.inputs.target }}"
-
-          echo "🎯 Syncing core networking..."
-          helmfile sync --selector name=metallb
-          helmfile sync --selector name=longhorn
-
           case "$TARGET" in
-            all) SERVICES=("pihole-stack" "homebridge" "tailscale") ;;
-            pihole) SERVICES=("pihole-stack") ;;
-            homebridge) SERVICES=("homebridge") ;;
-            tailscale) SERVICES=("tailscale") ;;
-            networking-only) SERVICES=() ;;
+            all)             STACKS="pihole homebridge tailscale cups ingresses"
+                             RESTART_NS="pihole homebridge tailscale printing"
+                             HEALTH_NS="pihole homebridge tailscale printing traefik-system" ;;
+            pihole)          STACKS="pihole";     RESTART_NS="pihole";     HEALTH_NS="pihole" ;;
+            homebridge)      STACKS="homebridge"; RESTART_NS="homebridge"; HEALTH_NS="homebridge" ;;
+            tailscale)       STACKS="tailscale";  RESTART_NS="tailscale";  HEALTH_NS="tailscale" ;;
+            cups)            STACKS="cups";       RESTART_NS="printing";   HEALTH_NS="printing" ;;
+            ingresses)       STACKS="ingresses";  RESTART_NS="";           HEALTH_NS="traefik-system" ;;
+            networking-only) STACKS="networking"; RESTART_NS="";           HEALTH_NS="metallb-system traefik-system" ;;
+            *) echo "Unknown target: $TARGET"; exit 1 ;;
           esac
+          {
+            echo "stacks=$STACKS"
+            echo "restart_ns=$RESTART_NS"
+            echo "health_ns=$HEALTH_NS"
+          } >> "$GITHUB_OUTPUT"
 
-          FAILED=()
+      - name: 🔎 Diff (dry run)
+        if: ${{ inputs.dry_run }}
+        env:
+          STACKS: ${{ steps.resolve.outputs.stacks }}
+        run: |
+          SELECTORS=()
+          for s in $STACKS; do SELECTORS+=(--selector "stack=$s"); done
+          helmfile "${SELECTORS[@]}" diff --suppress-secrets --context 3
 
-          for svc in "${SERVICES[@]}"; do
-            echo "🎯 Syncing $svc..."
-            if ! helmfile sync --selector name="$svc"; then
-              FAILED+=("$svc")
-            fi
+      - name: 🚀 Apply
+        if: ${{ !inputs.dry_run }}
+        env:
+          STACKS: ${{ steps.resolve.outputs.stacks }}
+        run: |
+          SELECTORS=()
+          for s in $STACKS; do SELECTORS+=(--selector "stack=$s"); done
+          helmfile "${SELECTORS[@]}" apply --suppress-secrets --skip-diff-on-install
+
+      - name: 🔄 Restart workloads
+        if: ${{ !inputs.dry_run && inputs.restart && steps.resolve.outputs.restart_ns != '' }}
+        env:
+          RESTART_NS: ${{ steps.resolve.outputs.restart_ns }}
+        run: |
+          for ns in $RESTART_NS; do
+            resources=$(kubectl get deploy,sts,ds -n "$ns" -o name)
+            for res in $resources; do
+              echo "🔄 Restarting $res in $ns"
+              kubectl rollout restart "$res" -n "$ns"
+              if ! kubectl rollout status "$res" -n "$ns" --timeout=600s; then
+                echo "❌ Rollout failed for $res in $ns"
+                kubectl get pods -n "$ns" -o wide
+                for pod in $(kubectl get pods -n "$ns" --no-headers | awk '{split($2,r,"/"); if (r[1]!=r[2]) print $1}'); do
+                  echo "📄 Logs: $pod"
+                  kubectl logs -n "$ns" "$pod" --all-containers --tail=50 || true
+                done
+                exit 1
+              fi
+            done
           done
 
-          if [ ${#FAILED[@]} -gt 0 ]; then
-            echo "❌ Failed services: ${FAILED[*]}"
-
-            for svc in "${FAILED[@]}"; do
-              case "$svc" in
-                pihole-stack) rollback_if_needed "pihole-stack" "pihole" ;;
-                homebridge)   rollback_if_needed "homebridge"   "homebridge" ;;
-                tailscale)    rollback_if_needed "tailscale"    "tailscale" ;;
-              esac
-            done
-
-            exit 1
-          fi
-
-          echo "✅ Redeploy completed successfully."
-
-      - name: 🔄 Restart Deployments (SAFE + diagnostic)
-        if: success()
-        shell: bash
+      - name: 🔍 Health check
+        if: ${{ !inputs.dry_run }}
+        env:
+          HEALTH_NS: ${{ steps.resolve.outputs.health_ns }}
         run: |
-          set -euo pipefail
-
-          safe_restart() {
-            local NS=$1
-            local DEPLOY=$2
-
-            echo "🔄 Restarting $DEPLOY in $NS"
-            kubectl rollout restart "deploy/$DEPLOY" -n "$NS"
-
-            echo "⏳ Waiting for rollout..."
-            if ! kubectl rollout status "deploy/$DEPLOY" -n "$NS" --timeout=600s; then
-              echo "❌ Rollout failed for $DEPLOY in $NS"
-
-              echo "📄 Deployment describe:"
-              kubectl describe deploy "$DEPLOY" -n "$NS" || true
-
-              echo "📄 Pod list:"
-              kubectl get pods -n "$NS" -o wide || true
-
-              POD=$(kubectl get pods -n "$NS" -o jsonpath='{.items[0].metadata.name}')
-              echo "📄 Logs from pod: $POD"
-              kubectl logs -n "$NS" "$POD" --all-containers || true
-
-              exit 1
-            fi
-
-            echo "✅ Rollout completed successfully for $DEPLOY"
-          }
-
-          TARGET="${{ github.event.inputs.target }}"
-
-          case "$TARGET" in
-            all)
-              safe_restart "pihole" "pihole-v6"
-              safe_restart "homebridge" "homebridge"
-              safe_restart "tailscale" "tailscale-operator"
-              ;;
-            pihole)
-              safe_restart "pihole" "pihole-v6"
-              ;;
-            homebridge)
-              safe_restart "homebridge" "homebridge"
-              ;;
-            tailscale)
-              safe_restart "tailscale" "tailscale-operator"
-              ;;
-            networking-only)
-              echo "No restarts needed."
-              ;;
-          esac
+          for ns in $HEALTH_NS; do
+            kubectl wait --for=condition=Ready pod --all -n "$ns" \
+              --field-selector=status.phase!=Succeeded --timeout=300s
+          done
+          kubectl get svc -A --field-selector spec.type=LoadBalancer

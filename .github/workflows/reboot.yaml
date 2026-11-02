@@ -1,0 +1,67 @@
+name: 🔄 Reboot Raspberry Pi
+
+# The runner lives on the same Pi it reboots, so the reboot is scheduled one
+# minute ahead: the job reports success first, then the Pi goes down. The runner
+# service and k3s start again on boot. Cancel a pending reboot with
+# `sudo shutdown -c` on the Pi.
+#
+# Requires passwordless sudo for the runner user (default on Raspberry Pi OS).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type CONFIRM-REBOOT to proceed'
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homelab-cluster
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  reboot:
+    runs-on: self-hosted
+    timeout-minutes: 10
+    env:
+      CONFIRM: ${{ inputs.confirm }}
+
+    steps:
+      - name: 🚨 SAFETY CHECK
+        run: |
+          if [ "$CONFIRM" != "CONFIRM-REBOOT" ]; then
+            echo "❌ ABORTED: You must type CONFIRM-REBOOT"
+            exit 1
+          fi
+
+      - name: 🔍 Verify sudo and cluster
+        run: |
+          sudo -n true || { echo "❌ Runner user has no passwordless sudo"; exit 1; }
+          kubectl get nodes
+
+      # Do not reboot while a Longhorn volume is rebuilding or degraded.
+      - name: 💾 Check Longhorn volumes
+        run: |
+          kubectl get volumes.longhorn.io -n longhorn-system
+          bad=$(kubectl get volumes.longhorn.io -n longhorn-system -o json | jq -r '
+            .items[]
+            | select(.status.state == "attached" and .status.robustness != "healthy")
+            | .metadata.name')
+          if [ -n "$bad" ]; then
+            echo "❌ Volumes not healthy, refusing to reboot:"
+            echo "$bad"
+            exit 1
+          fi
+
+      - name: 🔄 Schedule reboot (in 1 minute)
+        run: |
+          sudo -n shutdown -r +1 "Reboot requested from GitHub Actions"
+          echo "✅ Reboot scheduled. Pi-hole DNS and every service will be down for a few minutes."
+          echo "   Cancel with: sudo shutdown -c"

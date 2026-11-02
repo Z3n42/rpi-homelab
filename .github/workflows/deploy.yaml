@@ -5,28 +5,32 @@ on:
     tags:
       - "deploy-*"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only show the diff, do not apply"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homelab-cluster
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: self-hosted
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: 🧹 Log Rotation & Cleanup
-        run: |
-          LOG_DIR="/home/pi/logs"
-          mkdir -p "$LOG_DIR"
-
-          if [ -f "$LOG_DIR/deploy.log" ]; then
-            TS=$(date +%Y%m%d-%H%M%S)
-            mv "$LOG_DIR/deploy.log" "$LOG_DIR/archive-deploy-$TS.log"
-          fi
-
-          find "$LOG_DIR" -name "archive-deploy-*.log" -mtime +30 -delete
+      - name: 🛡️ Only deploy commits from main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
 
       - name: 🔍 Verify Environment
         run: |
@@ -34,98 +38,21 @@ jobs:
           helmfile --version
           sops --version
 
-      - name: 🔍 Detect Changed Services
-        shell: bash
-        run: |
-          BEFORE="${{ github.event.before }}"
-          AFTER="${{ github.sha }}"
+      - name: 🔎 Diff (dry run)
+        if: inputs.dry_run
+        run: helmfile diff --suppress-secrets --context 3
 
-          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            BEFORE=$(git rev-parse HEAD~1)
-          fi
-
-          CHANGED=$(git diff --name-only "$BEFORE" "$AFTER" || true)
-
-          SERVICES=()
-          for f in $CHANGED; do
-            case "$f" in
-              manifests/pihole/*|values/pihole*|secrets/pihole*)
-                SERVICES+=("pihole-stack")
-                ;;
-              manifests/homebridge/*|values/homebridge*)
-                SERVICES+=("homebridge")
-                ;;
-              manifests/tailscale/*|values/tailscale*)
-                SERVICES+=("tailscale")
-                ;;
-              manifests/ingresses/*)
-                SERVICES+=("traefik-resources")
-                ;;
-              values/network.yaml|secrets/app.sops.yaml|manifests/cups/*)
-                SERVICES+=("cups")
-                ;;
-            esac
-          done
-
-          printf "%s\n" "${SERVICES[@]}" | sort -u > /tmp/changed_services.list
-
-      - name: 🚀 Deploy with Helmfile (with rollback safeguard)
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          rollback_if_needed() {
-            local RELEASE=$1
-            local NS=$2
-
-            PREV=$(helm history "$RELEASE" -n "$NS" | awk 'NR==2{print $1}')
-            NEW=$(helm history "$RELEASE" -n "$NS" | awk 'NR==2{print $1}')
-
-            if [ "$NEW" -gt "$PREV" ]; then
-              echo "⚠️ Rolling back $RELEASE to revision $PREV"
-              helm rollback "$RELEASE" "$PREV" -n "$NS"
-            else
-              echo "ℹ️ No rollback needed for $RELEASE"
-            fi
-          }
-
-          echo "🎯 Syncing core networking..."
-          helmfile sync --selector name=metallb
-          helmfile sync --selector name=longhorn
-
-          FAILED=()
-
-          if [ -s /tmp/changed_services.list ]; then
-            for svc in $(cat /tmp/changed_services.list); do
-              echo "🎯 Syncing $svc..."
-              if ! helmfile sync --selector name="$svc"; then
-                FAILED+=("$svc")
-              fi
-            done
-          else
-            echo "⚠️ No changed services detected."
-          fi
-
-          if [ ${#FAILED[@]} -gt 0 ]; then
-            echo "❌ Failed services: ${FAILED[*]}"
-
-            for svc in "${FAILED[@]}"; do
-              case "$svc" in
-                pihole-stack) rollback_if_needed "pihole-stack" "pihole" ;;
-                homebridge)   rollback_if_needed "homebridge"   "homebridge" ;;
-                tailscale)    rollback_if_needed "tailscale"    "tailscale" ;;
-                cups)         rollback_if_needed "cups"         "printing" ;;
-                traefik-resources) rollback_if_needed "traefik-resources" "traefik-system" ;;
-              esac
-            done
-
-            exit 1
-          fi
-
-          echo "✅ Deployment completed successfully."
+      # helmfile apply only upgrades releases that changed. Apps and Traefik
+      # use atomic: true in helmfile.yaml, so a failed upgrade rolls back by itself.
+      - name: 🚀 Apply
+        if: ${{ !inputs.dry_run }}
+        run: helmfile apply --suppress-secrets --skip-diff-on-install
 
       - name: 🔍 Final Health Check
-        if: success()
+        if: ${{ !inputs.dry_run }}
         run: |
-          kubectl get svc -A | grep LoadBalancer
-          kubectl get pods -A | grep -v "Running\|Completed" || echo "All pods running!"
+          kubectl get svc -A --field-selector spec.type=LoadBalancer
+          for ns in metallb-system longhorn-system traefik-system pihole homebridge tailscale printing; do
+            kubectl wait --for=condition=Ready pod --all -n "$ns" \
+              --field-selector=status.phase!=Succeeded --timeout=300s
+          done

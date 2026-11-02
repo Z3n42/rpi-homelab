@@ -8,101 +8,116 @@ on:
         required: true
         default: 'all'
         type: choice
-        options: 
+        options:
           - 'all'
           - 'pihole'
           - 'homebridge'
           - 'tailscale'
           - 'cups'
           - 'ingresses'
-          - 'unbound'
           - 'metallb-config'
       confirm:
         description: 'Type CONFIRM-SERVICE-CLEANUP to proceed'
         required: true
         default: ''
 
+permissions:
+  contents: read
+
+concurrency:
+  group: homelab-cluster
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   cleanup:
     runs-on: self-hosted
+    timeout-minutes: 30
+    env:
+      TARGET: ${{ inputs.target }}
+      CONFIRM: ${{ inputs.confirm }}
 
     steps:
       - name: 🚨 SAFETY CHECK
-        if: github.event.inputs.confirm != 'CONFIRM-SERVICE-CLEANUP'
         run: |
-          echo "❌ ABORTED: You must type CONFIRM-SERVICE-CLEANUP"
-          exit 1
+          if [ "$CONFIRM" != "CONFIRM-SERVICE-CLEANUP" ]; then
+            echo "❌ ABORTED: You must type CONFIRM-SERVICE-CLEANUP"
+            exit 1
+          fi
 
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: 🧹 Cleanup Services (PVCs preserved)
+      - name: 🎯 Resolve target
+        id: resolve
         run: |
-          TARGET="${{ github.event.inputs.target }}"
-          echo "🧹 SERVICE CLEANUP (PVCs preserved) - Target: $TARGET"
-
-          cleanup_release() {
-            RELEASE=$1
-            echo "🧹 Destroying Helm release: $RELEASE"
-            helmfile destroy --selector name=$RELEASE || true
-          }
-
-          cleanup_services() {
-            NS=$1
-            echo "🧹 Deleting Deployments, Jobs and Services in $NS"
-            kubectl delete deploy --all -n $NS --ignore-not-found || true
-            kubectl delete job --all -n $NS --ignore-not-found || true
-
-            # Clean Services safely (remove finalizers)
-            for svc in $(kubectl get svc -n $NS -o jsonpath='{.items[*].metadata.name}'); do
-              echo "🧹 Removing Service: $svc"
-              kubectl get svc $svc -n $NS -o json \
-                | jq 'del(.metadata.finalizers)' \
-                | kubectl replace --raw "/api/v1/namespaces/$NS/services/$svc/finalize" -f - || true
-            done
-          }
-
           case "$TARGET" in
-            "all")
-              cleanup_release "pihole-stack"
-              cleanup_release "homebridge"
-              cleanup_release "tailscale"
-              cleanup_release "cups"
-              cleanup_release "traefik-resources" 
-              cleanup_services "pihole"
-              cleanup_services "homebridge"
-              cleanup_services "tailscale"
-              cleanup_services "printing"
-              cleanup_services "traefik-system"
-              ;;
-            "pihole")
-              cleanup_release "pihole-stack"
-              cleanup_services "pihole"
-              ;;
-            "homebridge")
-              cleanup_release "homebridge"
-              cleanup_services "homebridge"
-              ;;
-            "tailscale")
-              cleanup_release "tailscale"
-              cleanup_services "tailscale"
-              ;;
-            "cups")
-              cleanup_release "cups"
-              cleanup_services "printing"
-              ;;
-            "ingresses")
-              cleanup_release "traefik-resources"
-              cleanup_services "traefik-system" 
-              ;;
-            "unbound")
-              cleanup_services "pihole"
-              ;;
-            "metallb-config")
-              cleanup_release "metallb-config"
-              ;;
+            all)            SELECTORS="stack=pihole stack=homebridge stack=tailscale stack=cups stack=ingresses"
+                            NAMESPACES="pihole homebridge tailscale printing" ;;
+            pihole)         SELECTORS="stack=pihole";     NAMESPACES="pihole" ;;
+            homebridge)     SELECTORS="stack=homebridge"; NAMESPACES="homebridge" ;;
+            tailscale)      SELECTORS="stack=tailscale";  NAMESPACES="tailscale" ;;
+            cups)           SELECTORS="stack=cups";       NAMESPACES="printing" ;;
+            ingresses)      SELECTORS="stack=ingresses";  NAMESPACES="" ;;
+            metallb-config) SELECTORS="name=metallb-config"; NAMESPACES="" ;;
+            *) echo "Unknown target: $TARGET"; exit 1 ;;
           esac
+          {
+            echo "selectors=$SELECTORS"
+            echo "namespaces=$NAMESPACES"
+          } >> "$GITHUB_OUTPUT"
 
-          echo "💾 PVCs preserved:"
-          kubectl get pvc -A | grep longhorn || echo "No PVCs found"
-          echo "✅ Cleanup complete. Ready for helmfile apply."
+      - name: 🛡️ Verify PVCs survive the uninstall
+        env:
+          NAMESPACES: ${{ steps.resolve.outputs.namespaces }}
+        run: |
+          bad=0
+          for ns in $NAMESPACES; do
+            unprotected=$(kubectl get pvc -n "$ns" -o json | jq -r '
+              .items[]
+              | select(.metadata.annotations["meta.helm.sh/release-name"] != null)
+              | select(.metadata.annotations["helm.sh/resource-policy"] != "keep")
+              | .metadata.name')
+            for pvc in $unprotected; do
+              echo "❌ PVC $ns/$pvc would be deleted by helm uninstall (no helm.sh/resource-policy=keep)"
+              bad=1
+            done
+          done
+          if [ "$bad" -ne 0 ]; then
+            echo "Run the Deploy workflow first so the keep annotation is applied, then retry."
+            exit 1
+          fi
+          echo "✅ All Helm-managed PVCs in [$NAMESPACES] are protected."
+          kubectl get pvc -A
+
+      - name: 🧹 Destroy releases
+        env:
+          SELECTORS: ${{ steps.resolve.outputs.selectors }}
+        run: |
+          SEL=()
+          for s in $SELECTORS; do SEL+=(--selector "$s"); done
+          helmfile "${SEL[@]}" destroy
+
+      - name: ⏳ Wait for pods to terminate
+        env:
+          NAMESPACES: ${{ steps.resolve.outputs.namespaces }}
+        run: |
+          for ns in $NAMESPACES; do
+            for _ in $(seq 1 60); do
+              [ -z "$(kubectl get pods -n "$ns" --no-headers 2>/dev/null)" ] && break
+              sleep 2
+            done
+            if [ -n "$(kubectl get pods -n "$ns" --no-headers 2>/dev/null)" ]; then
+              echo "❌ Pods still present in $ns:"
+              kubectl get pods -n "$ns"
+              exit 1
+            fi
+          done
+
+      - name: 💾 PVCs preserved
+        run: |
+          kubectl get pvc -A
+          echo "✅ Cleanup complete. Run the Deploy or Redeploy workflow to bring services back."

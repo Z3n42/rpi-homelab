@@ -1,0 +1,228 @@
+name: 💣 Teardown (Destructive)
+
+# Replaces cluster-cleanup.yaml and full-reset.yaml.
+# Keeping data while removing apps is service-cleanup.yaml's job.
+#
+#   target      | delete_data=false | delete_data=true
+#   ------------+-------------------+------------------------------------------
+#   pihole      | refused           | destroy, delete PVCs + volumes, delete ns
+#   homebridge  | refused           | destroy, delete PVCs + volumes, delete ns
+#   cups        | refused           | destroy, delete PVCs + volumes, delete ns
+#   tailscale   | destroy + ns      | same (it has no data)
+#   networking  | destroy + ns      | same (MetalLB, Traefik and ingresses)
+#   longhorn    | refused           | only if no PVC uses Longhorn anymore
+#   all         | refused           | everything, Longhorn last
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'What to tear down?'
+        required: true
+        default: 'tailscale'
+        type: choice
+        options:
+          - 'pihole'
+          - 'homebridge'
+          - 'cups'
+          - 'tailscale'
+          - 'networking'
+          - 'longhorn'
+          - 'all'
+      delete_data:
+        description: 'Also delete PVCs and Longhorn volumes (IRREVERSIBLE)'
+        type: boolean
+        default: false
+      confirm:
+        description: 'Type TEARDOWN-<target>, or DELETE-DATA-<target> when delete_data is on'
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homelab-cluster
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  teardown:
+    runs-on: self-hosted
+    timeout-minutes: 45
+    env:
+      TARGET: ${{ inputs.target }}
+      DELETE_DATA: ${{ inputs.delete_data }}
+      CONFIRM: ${{ inputs.confirm }}
+
+    steps:
+      - name: 🚨 SAFETY CHECK
+        run: |
+          EXPECTED="TEARDOWN-$TARGET"
+          [ "$DELETE_DATA" = "true" ] && EXPECTED="DELETE-DATA-$TARGET"
+          if [ "$CONFIRM" != "$EXPECTED" ]; then
+            echo "❌ ABORTED: type exactly $EXPECTED"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔍 Verify Environment
+        run: |
+          kubectl version --client
+          helmfile --version
+          jq --version
+
+      # APP_SELECTORS: helmfile selectors to destroy (stack labels live in helmfile.yaml).
+      # NAMESPACES:    namespaces emptied and removed (Longhorn is handled separately, last).
+      # LONGHORN:      whether Longhorn itself is part of the target.
+      - name: 🎯 Resolve target
+        id: resolve
+        run: |
+          case "$TARGET" in
+            pihole)     APP="stack=pihole";     NS="pihole";     LH=false ;;
+            homebridge) APP="stack=homebridge"; NS="homebridge"; LH=false ;;
+            cups)       APP="stack=cups";       NS="printing";   LH=false ;;
+            tailscale)  APP="stack=tailscale";  NS="tailscale";  LH=false ;;
+            networking) APP="stack=ingresses stack=networking"
+                        NS="traefik-system metallb-system";      LH=false ;;
+            longhorn)   APP="";                 NS="";           LH=true ;;
+            all)        APP="stack=pihole stack=homebridge stack=tailscale stack=cups stack=ingresses stack=networking"
+                        NS="pihole homebridge tailscale printing traefik-system metallb-system"
+                        LH=true ;;
+            *) echo "Unknown target: $TARGET"; exit 1 ;;
+          esac
+
+          case "$TARGET" in
+            pihole|homebridge|cups|longhorn|all)
+              if [ "$DELETE_DATA" != "true" ]; then
+                echo "❌ '$TARGET' holds data: enable delete_data to wipe it."
+                echo "   To remove apps but keep their data, use the Service Cleanup workflow."
+                exit 1
+              fi ;;
+          esac
+
+          {
+            echo "app_selectors=$APP"
+            echo "namespaces=$NS"
+            echo "longhorn=$LH"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 📋 Plan
+        env:
+          APP_SELECTORS: ${{ steps.resolve.outputs.app_selectors }}
+          NAMESPACES: ${{ steps.resolve.outputs.namespaces }}
+          LONGHORN: ${{ steps.resolve.outputs.longhorn }}
+        run: |
+          echo "Target: $TARGET | delete_data: $DELETE_DATA"
+          echo "Releases (selectors): ${APP_SELECTORS:-none}"
+          echo "Namespaces to remove: ${NAMESPACES:-none}"
+          echo "Longhorn removed:     $LONGHORN"
+          echo
+          echo "PVCs currently in the cluster:"
+          kubectl get pvc -A
+          echo
+          echo "Longhorn volumes:"
+          kubectl get volumes.longhorn.io -n longhorn-system || true
+
+      # Order matters: pods must be gone before their PVCs can be deleted, PVCs
+      # must be deleted while Longhorn is still alive (it removes the volumes),
+      # and Longhorn goes last. Namespace finalizers are never forced: if a
+      # namespace hangs the job fails and prints why.
+      - name: 💣 Execute teardown
+        env:
+          APP_SELECTORS: ${{ steps.resolve.outputs.app_selectors }}
+          NAMESPACES: ${{ steps.resolve.outputs.namespaces }}
+          LONGHORN: ${{ steps.resolve.outputs.longhorn }}
+        run: |
+          wait_pods_gone() {
+            local ns=$1
+            for _ in $(seq 1 90); do
+              [ -z "$(kubectl get pods -n "$ns" --no-headers 2>/dev/null)" ] && return 0
+              sleep 2
+            done
+            echo "❌ Pods still present in $ns:"
+            kubectl get pods -n "$ns"
+            return 1
+          }
+
+          delete_pvcs() {
+            local ns=$1 pvs pv
+            kubectl get ns "$ns" >/dev/null 2>&1 || return 0
+            [ -z "$(kubectl get pvc -n "$ns" -o name)" ] && return 0
+            pvs=$(kubectl get pvc -n "$ns" -o jsonpath='{.items[*].spec.volumeName}')
+            echo "🗑️ Deleting PVCs in $ns"
+            kubectl delete pvc --all -n "$ns" --wait --timeout=180s
+            for pv in $pvs; do
+              for _ in $(seq 1 60); do
+                kubectl get pv "$pv" >/dev/null 2>&1 || break
+                sleep 2
+              done
+              if kubectl get pv "$pv" >/dev/null 2>&1; then
+                echo "❌ PV $pv still exists (reclaim policy Retain?)"
+                return 1
+              fi
+            done
+          }
+
+          delete_ns() {
+            local ns=$1
+            kubectl get ns "$ns" >/dev/null 2>&1 || return 0
+            if [ -n "$(kubectl get pvc -n "$ns" -o name)" ]; then
+              echo "ℹ️ Keeping namespace $ns (it still has PVCs)"
+              return 0
+            fi
+            echo "🗑️ Deleting namespace $ns"
+            if ! kubectl delete ns "$ns" --wait --timeout=180s; then
+              echo "❌ Namespace $ns did not terminate. Conditions:"
+              kubectl get ns "$ns" -o jsonpath='{range .status.conditions[*]}{.type}: {.message}{"\n"}{end}'
+              return 1
+            fi
+          }
+
+          if [ -n "$APP_SELECTORS" ]; then
+            SEL=()
+            for s in $APP_SELECTORS; do SEL+=(--selector "$s"); done
+            helmfile "${SEL[@]}" destroy
+          fi
+
+          for ns in $NAMESPACES; do wait_pods_gone "$ns"; done
+
+          if [ "$DELETE_DATA" = "true" ]; then
+            for ns in $NAMESPACES; do delete_pvcs "$ns"; done
+          fi
+
+          for ns in $NAMESPACES; do delete_ns "$ns"; done
+
+          if [ "$LONGHORN" = "true" ]; then
+            remaining=$(kubectl get pvc -A -o json | jq -r '.items[] | select(.spec.storageClassName=="longhorn") | "\(.metadata.namespace)/\(.metadata.name)"')
+            if [ -n "$remaining" ]; then
+              echo "❌ These PVCs still use Longhorn, tear their apps down first:"
+              echo "$remaining"
+              exit 1
+            fi
+            for _ in $(seq 1 90); do
+              [ -z "$(kubectl get volumes.longhorn.io -n longhorn-system -o name)" ] && break
+              sleep 2
+            done
+            if [ -n "$(kubectl get volumes.longhorn.io -n longhorn-system -o name)" ]; then
+              echo "❌ Longhorn volumes still exist:"
+              kubectl get volumes.longhorn.io -n longhorn-system
+              exit 1
+            fi
+            # Longhorn refuses to uninstall without this setting.
+            kubectl -n longhorn-system patch settings.longhorn.io deleting-confirmation-flag \
+              --type=merge -p '{"value":"true"}'
+            helmfile --selector name=longhorn destroy
+            delete_ns longhorn-system
+          fi
+
+      - name: ✅ Final state
+        run: |
+          kubectl get ns
+          kubectl get pvc -A
+          kubectl get pv
