@@ -83,6 +83,8 @@ resources:
     metadata:
       name: pihole-pvc-v6
       namespace: pihole
+      annotations:
+        helm.sh/resource-policy: keep
     spec:
       accessModes:
         - ReadWriteOnce

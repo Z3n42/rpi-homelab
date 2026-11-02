@@ -3,8 +3,6 @@ kind: Connector
 metadata:
   name: homelab-subnet-router
   namespace: tailscale
-  annotations:
-    redeploy-timestamp: {{ now | quote }}
 spec:
   subnetRouter:
     advertiseRoutes:
