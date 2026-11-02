@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Backup tag (backup-YYYYMMDD) or "latest"'
+        description: 'Backup tag (backup-YYYYMMDD or backup-YYYYMMDD-N) or "latest"'
         required: true
         default: 'latest'
       dry_run:
@@ -49,10 +49,10 @@ jobs:
       - name: 🎯 Resolve backup tag
         run: |
           if [ "$REF" = "latest" ]; then
-            REF=$(git tag -l 'backup-[0-9]*' | sort | tail -n 1)
+            REF=$(git tag -l 'backup-[0-9]*' | grep -E '^backup-[0-9]{8}(-[0-9]+)?$' | LC_ALL=C sort -V | tail -n 1)
           fi
-          if ! [[ "$REF" =~ ^backup-[0-9]{8}$ ]]; then
-            echo "❌ '$REF' is not a backup-YYYYMMDD tag"
+          if ! [[ "$REF" =~ ^backup-[0-9]{8}(-[0-9]+)?$ ]]; then
+            echo "❌ '$REF' is not a backup-YYYYMMDD[-N] tag"
             exit 1
           fi
           git rev-parse -q --verify "refs/tags/$REF^{commit}" >/dev/null \
