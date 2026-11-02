@@ -11,6 +11,17 @@ RED='\033[0;31m'
 NC='\033[0m'
 YELLOW='\033[1;33m'
 
+# Versions pinned
+NODE_NAME="zenpi"
+K3S_VERSION="v1.33.6+k3s1"
+HELM_VERSION="v3.19.4"
+HELMFILE_VERSION="0.169.1"
+SOPS_VERSION="3.9.0"
+HELM_DIFF_VERSION="v3.9.14"
+HELM_SECRETS_VERSION="v4.6.3"
+
+die() { echo -e "${RED}❌ $*${NC}"; exit 1; }
+
 if [ "$EUID" -ne 0 ]; then
   echo -e "${RED}Please run as root (sudo ./setup_wizard.sh)${NC}"
   exit 1
@@ -60,11 +71,18 @@ fi
 # ------------------------------------------------------------------------------
 echo -e "\n${GREEN}--> [1/5] Installing System Dependencies...${NC}"
 
+if [ "$(hostname)" != "$NODE_NAME" ]; then
+  echo "    - Setting hostname to $NODE_NAME (was $(hostname))"
+  hostnamectl set-hostname "$NODE_NAME"
+  sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$NODE_NAME/" /etc/hosts
+fi
+
 apt update -qq && apt install -y \
   curl wget git htop vim \
   open-iscsi nfs-common \
   age jq \
   libcups2 \
+  printer-driver-foo2zjs \
   > /dev/null
 
 systemctl enable --now iscsid rpcbind nfs-client.target
@@ -75,6 +93,11 @@ PIHOLE_IP=$(awk '/primary_ip/{print $2; exit}' values/network.yaml | tr -d '"')
 if [ -n "$ZENPI_IP" ]; then
   echo -e "${GREEN}Configuring static IP $ZENPI_IP via netplan...${NC}"
   NETPLAN_FILE="/etc/netplan/01-zenpi.yaml"
+
+  # Gateway
+  GATEWAY=$(ip -4 route show default | awk '{print $3; exit}')
+  GATEWAY="${GATEWAY:-${ZENPI_IP%.*}.1}"
+  echo "    - Gateway: $GATEWAY"
 
   DNS_PRIMARY="1.1.1.1"
   DNS_SECONDARY="8.8.8.8"
@@ -99,7 +122,7 @@ network:
         - ${ZENPI_IP}/24
       routes:
         - to: default
-          via: 192.168.1.1
+          via: ${GATEWAY}
       nameservers:
         addresses:
           - ${DNS_PRIMARY}
@@ -132,6 +155,8 @@ echo "blacklist usblp" > /etc/modprobe.d/blacklist-usblp.conf
 rm -f /etc/modules-load.d/printer.conf
 rmmod usblp 2>/dev/null && echo " ✅ usblp unloaded" || echo " ✅ usblp was not loaded"
 
+# (Peripheral data is restored later, once the age key exists: see PHASE 2.)
+
 # CUPS reconnect
 sudo tee /usr/local/bin/restart-cups-pod.sh <<'EOF'
 #!/bin/bash
@@ -139,17 +164,23 @@ export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 sleep 1
 
 SUBSYSTEM=usb /lib/udev/hpljP1005 \
-  && echo "$(date) Firmware loaded OK" >> /var/log/cups-pod-restart.log \
-  || echo "$(date) Firmware load skipped/failed" >> /var/log/cups-pod-restart.log
+  && echo "$(date) Peripheral init OK" >> /var/log/cups-pod-restart.log \
+  || echo "$(date) Peripheral init skipped/failed" >> /var/log/cups-pod-restart.log
 
 sleep 3
 
-until /usr/local/bin/kubectl rollout restart deployment/cups -n printing \
-  >> /var/log/cups-pod-restart.log 2>&1; do
-  echo "$(date) k3s API not ready, retrying in 5s..." >> /var/log/cups-pod-restart.log
+# Wait for the k3s API and the cups deployment (not there yet on a fresh install),
+# but give up after 10 minutes instead of looping forever.
+for _ in $(seq 1 120); do
+  if /usr/local/bin/kubectl rollout restart deployment/cups -n printing \
+       >> /var/log/cups-pod-restart.log 2>&1; then
+    echo "$(date) CUPS pod restarted" >> /var/log/cups-pod-restart.log
+    exit 0
+  fi
+  echo "$(date) k3s API or cups deployment not ready, retrying in 5s..." >> /var/log/cups-pod-restart.log
   sleep 5
 done
-echo "$(date) CUPS pod restarted" >> /var/log/cups-pod-restart.log
+echo "$(date) Gave up restarting CUPS after 10 minutes" >> /var/log/cups-pod-restart.log
 EOF
 sudo chmod +x /usr/local/bin/restart-cups-pod.sh
 
@@ -161,7 +192,7 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="03f0", ATTR{idProduct}=="3d17", ACTION=="add"
 EOF
 udevadm control --reload-rules
 udevadm trigger --subsystem-match=usb --action=add 2>/dev/null || true
-echo " ✅ HP P1005 USB autosuspend disabled + hotplug handler installed"
+echo " ✅ USB autosuspend disabled + hotplug handler installed"
 
 # Mask avahi-daemon  
 systemctl stop avahi-daemon.socket avahi-daemon 2>/dev/null || true
@@ -174,9 +205,54 @@ echo " ✅ avahi-daemon masked (mDNS handled by cups-avahi pod)"
 # ------------------------------------------------------------------------------
 echo -e "\n${GREEN}--> [K3s] Synchronizing Engine Configuration...${NC}"
 
+K3S_WAS_INSTALLED=false
+command -v k3s &> /dev/null && K3S_WAS_INSTALLED=true
+K3S_CONFIG_CHANGED=false
+LOGIND_CONFIG_CHANGED=false
+
+# usage: write_if_changed <path> <mode> <flag-variable>   (content on stdin)
+write_if_changed() {
+  local path=$1 mode=$2 flag=$3 tmp
+  tmp=$(mktemp)
+  cat > "$tmp"
+  if ! cmp -s "$tmp" "$path" 2>/dev/null; then
+    install -m "$mode" "$tmp" "$path"
+    printf -v "$flag" '%s' true
+  fi
+  rm -f "$tmp"
+}
+
+mkdir -p /etc/rancher/k3s /etc/systemd/logind.conf.d
+install -d -m 0700 /var/lib/rancher/k3s/agent/etc/kubelet.conf.d
+
+write_if_changed /etc/rancher/k3s/config.yaml 0644 K3S_CONFIG_CHANGED <<'EOF'
+disable:
+  - traefik
+  - servicelb
+EOF
+
+# Graceful node shutdown
+write_if_changed /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/90-shutdown-grace.conf 0600 K3S_CONFIG_CHANGED <<'EOF'
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+shutdownGracePeriod: 60s
+shutdownGracePeriodCriticalPods: 20s
+EOF
+
+write_if_changed /etc/systemd/logind.conf.d/50-kubelet-shutdown.conf 0644 LOGIND_CONFIG_CHANGED <<'EOF'
+[Login]
+InhibitDelayMaxSec=70
+EOF
+
+if [ "$LOGIND_CONFIG_CHANGED" = true ]; then
+  echo "    - logind config changed, restarting systemd-logind..."
+  systemctl restart systemd-logind
+fi
+
 if ! command -v k3s &> /dev/null; then
   echo "    - Installing K3s..."
-  curl -sfL https://get.k3s.io | sh -
+  curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="$K3S_VERSION" sh -
+  command -v k3s &> /dev/null || die "k3s installation failed"
   mkdir -p "$REAL_HOME/.kube"
   cp /etc/rancher/k3s/k3s.yaml "$REAL_HOME/.kube/config"
   chown "$REAL_USER:$REAL_USER" "$REAL_HOME/.kube/config"
@@ -189,12 +265,10 @@ if [ ! -f /usr/local/bin/kubectl ]; then
   ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
 fi
 
-mkdir -p /etc/rancher/k3s
-cat <<'EOF' > /etc/rancher/k3s/config.yaml
-disable:
-  - traefik
-  - servicelb
-EOF
+if [ "$K3S_WAS_INSTALLED" = true ] && [ "$K3S_CONFIG_CHANGED" = true ]; then
+  echo -e "${YELLOW}    - k3s config changed, restarting k3s (pods restart for a minute or two)...${NC}"
+  systemctl restart k3s
+fi
 
 cat > /usr/local/bin/k3s-flannel-bootstrap.sh <<'EOF'
 #!/bin/bash
@@ -336,24 +410,32 @@ echo -e "\n${GREEN}--> [1.8/5] Installing Helm, Helmfile & SOPS...${NC}"
 
 if ! command -v helm &> /dev/null; then
   echo "    - Installing Helm..."
-  curl https://raw.githubusercontent.com | bash
+  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash -s -- --version "$HELM_VERSION"
 fi
 
 echo "    - Checking Helm plugins for $REAL_USER..."
-sudo -u "$REAL_USER" helm plugin install https://github.com --version v4.6.0 > /dev/null 2>&1 || true
-sudo -u "$REAL_USER" helm plugin install https://github.com > /dev/null 2>&1 || true
+sudo -u "$REAL_USER" helm plugin install https://github.com/jkroepke/helm-secrets --version "$HELM_SECRETS_VERSION" > /dev/null 2>&1 || true
+sudo -u "$REAL_USER" helm plugin install https://github.com/databus23/helm-diff --version "$HELM_DIFF_VERSION" > /dev/null 2>&1 || true
 
 if ! command -v helmfile &> /dev/null; then
   echo "    - Installing Helmfile..."
-  curl -sSfL https://github.com | tar xz
+  curl -sSfL https://github.com/helmfile/helmfile/releases/download/v${HELMFILE_VERSION}/helmfile_${HELMFILE_VERSION}_linux_arm64.tar.gz | tar xz
   mv helmfile /usr/local/bin/
 fi
 
 if ! command -v sops &> /dev/null; then
   echo "    - Installing SOPS..."
-  curl -sSfL https://github.com > sops
+  curl -sSfL https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.arm64 > sops
   chmod +x sops && mv sops /usr/local/bin/
 fi
+
+for tool in helm helmfile sops; do
+  command -v "$tool" &> /dev/null || die "$tool is not installed (download failed?)"
+done
+for plugin in diff secrets; do
+  sudo -u "$REAL_USER" helm plugin list | awk 'NR>1{print $1}' | grep -qx "$plugin" \
+    || die "helm plugin '$plugin' is not installed"
+done
 
 # ------------------------------------------------------------------------------
 # PHASE 2: SECURITY SETUP (AGE KEY, OPTION C)
@@ -406,6 +488,28 @@ if [ $? -ne 0 ]; then
 fi
 echo -e "${GREEN}✔ SOPS decryption OK${NC}"
 
+# Peripheral blob:
+FW_DST="/usr/lib/firmware/hp/sihpP1005.dl"
+FW_SHA256="bee151ceaa27cb54e3bf632b01e66023b6ce3c9ff86c13f6699d4e4d796fde6a"
+fw_ok() { [ -f "$1" ] && [ "$(sha256sum "$1" | cut -d' ' -f1)" = "$FW_SHA256" ]; }
+if fw_ok "$FW_DST"; then
+  echo -e "${GREEN}✔ Peripheral data already installed${NC}"
+else
+  FW_TMP=$(mktemp)
+  if sops -d --input-type json --output-type binary "$REPO_ROOT/secrets/peripherals.sops.json" > "$FW_TMP" 2>/dev/null \
+     && fw_ok "$FW_TMP"; then
+    install -D -m 644 "$FW_TMP" "$FW_DST"
+    echo -e "${GREEN}✔ Peripheral data installed${NC}"
+    # The hotplug rule fired in PHASE 1.2, before this file existed: replay the
+    # "add" event for that one device so it is loaded now, not after a power cycle.
+    udevadm trigger --action=add --subsystem-match=usb \
+      --attr-match=idVendor=03f0 --attr-match=idProduct=3d17 2>/dev/null || true
+  else
+    echo -e "${YELLOW}⚠️  Could not restore the peripheral data: CUPS will not print until $FW_DST exists.${NC}"
+  fi
+  rm -f "$FW_TMP"
+fi
+
 # ------------------------------------------------------------------------------
 # PHASE 3: DEPLOYMENT MODE
 # ------------------------------------------------------------------------------
@@ -434,8 +538,8 @@ elif [ "$MODE" == "2" ]; then
   sudo -u "$REAL_USER" mkdir -p "$RUNNER_DIR"
   cd "$RUNNER_DIR"
 
-  LATEST_VERSION=$(curl -s https://api.github.com | jq -r .tag_name | sed 's/v//')
-  sudo -u "$REAL_USER" curl -o actions-runner.tar.gz -L "https://github.com{LATEST_VERSION}/actions-runner-linux-arm64-${LATEST_VERSION}.tar.gz"
+  LATEST_VERSION=$(curl -s https://api.github.com/repos/actions/runner/releases/latest | jq -r .tag_name | sed 's/v//')
+  sudo -u "$REAL_USER" curl -o actions-runner.tar.gz -L "https://github.com/actions/runner/releases/download/v${LATEST_VERSION}/actions-runner-linux-arm64-${LATEST_VERSION}.tar.gz"
   sudo -u "$REAL_USER" tar xzf actions-runner.tar.gz
 
   sudo -u "$REAL_USER" ./config.sh --url "${REPO_URL%.git}" --token "$RUNNER_TOKEN" --unattended --name "$(hostname)" --replace
