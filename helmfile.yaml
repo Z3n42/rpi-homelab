@@ -13,6 +13,8 @@ repositories:
     url: https://bedag.github.io/helm-charts
   - name: traefik
     url: https://traefik.github.io/charts
+  - name: jetstack
+    url: https://charts.jetstack.io
 
 ---
 environments:
@@ -21,6 +23,7 @@ environments:
       - values/network.yaml
     secrets:
       - secrets/app.sops.yaml
+      - secrets/cloudflare.sops.yaml
 
 ---
 releases:
@@ -95,6 +98,33 @@ releases:
           - "--timeout=300s"
     values:
       - values/longhorn.yaml
+
+  # -----------------------------
+  # CERT-MANAGER 
+  # -----------------------------
+  - name: cert-manager
+    labels:
+      stack: certs
+    namespace: cert-manager
+    createNamespace: true
+    atomic: true
+    timeout: 600
+    chart: jetstack/cert-manager
+    version: "v1.17.2"
+    values:
+      - crds:
+          enabled: true
+
+  - name: cert-manager-issuers
+    labels:
+      stack: certs
+    namespace: cert-manager
+    chart: bedag/raw
+    version: "2.0.2"
+    needs:
+      - cert-manager/cert-manager
+    values:
+      - manifests/cert-manager/cert-manager-issuers.yaml.gotmpl
 
   # -----------------------------
   # TRAEFIK
