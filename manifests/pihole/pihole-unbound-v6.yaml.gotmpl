@@ -62,6 +62,14 @@ resources:
         maxDBdays = 30
         DBinterval = 60.0
 
+        [misc]
+        dnsmasq_lines = [
+          "address=/traefik.{{ .Values.network.tls_domain }}/{{ .Values.network.services.traefik.ip }}",
+          "address=/cups.{{ .Values.network.tls_domain }}/{{ .Values.network.services.traefik.ip }}",
+          "address=/homebridge.{{ .Values.network.tls_domain }}/{{ .Values.network.services.traefik.ip }}",
+          "address=/pihole.{{ .Values.network.tls_domain }}/{{ .Values.network.services.traefik.ip }}"
+        ]
+
   - apiVersion: v1
     kind: ConfigMap
     metadata:
