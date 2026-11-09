@@ -64,10 +64,10 @@ resources:
 
         [misc]
         dnsmasq_lines = [
-          "address=/traefik.{{ .Values.network.tls_domain }}/{{ .Values.network.services.traefik.ip }}",
-          "address=/cups.{{ .Values.network.tls_domain }}/{{ .Values.network.services.traefik.ip }}",
-          "address=/homebridge.{{ .Values.network.tls_domain }}/{{ .Values.network.services.traefik.ip }}",
-          "address=/pihole.{{ .Values.network.tls_domain }}/{{ .Values.network.services.traefik.ip }}"
+          "local=/traefik.{{ .Values.network.tls_domain }}/",
+          "local=/cups.{{ .Values.network.tls_domain }}/",
+          "local=/homebridge.{{ .Values.network.tls_domain }}/",
+          "local=/pihole.{{ .Values.network.tls_domain }}/"
         ]
 
   - apiVersion: v1
