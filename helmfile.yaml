@@ -155,8 +155,6 @@ releases:
       - traefik-system/traefik-crds
       - metallb-system/metallb-config
       - longhorn-system/longhorn
-    secrets:
-      - secrets/app.sops.yaml
     values:
       - installationCRDs: false
       - api:
@@ -321,8 +319,6 @@ releases:
     needs:
       - metallb-system/metallb
       - tailscale/tailscale-oauth-secret
-    secrets:
-      - secrets/app.sops.yaml
     values:
       - operatorConfig:
           logging: "info"
@@ -449,6 +445,28 @@ releases:
                 DefaultShared Yes
 
   # -----------------------------
+  # CUPS credentials
+  # -----------------------------
+  - name: cups-credentials
+    labels:
+      stack: cups
+    namespace: printing
+    chart: bedag/raw
+    version: "2.0.2"
+    createNamespace: true
+    values:
+      - resources:
+          - apiVersion: v1
+            kind: Secret
+            metadata:
+              name: cups-admin
+              namespace: printing
+            type: Opaque
+            stringData:
+              CUPS_ADMIN_USER: "{{ .Values.cups.user }}"
+              CUPS_ADMIN_PASSWORD: "{{ .Values.cups.password }}"
+
+  # -----------------------------
   # CUPS
   # -----------------------------
   - name: cups
@@ -462,10 +480,9 @@ releases:
     createNamespace: true
     needs:
       - printing/cups-config
+      - printing/cups-credentials
       - longhorn-system/longhorn
       - metallb-system/metallb-config
-    secrets:
-      - secrets/app.sops.yaml
     values:
       - controllers:
           main:
@@ -491,11 +508,9 @@ releases:
                 image:
                   repository: mwatz/cups
                   tag: latest
-                env:
-                  - name: CUPS_ADMIN_USER
-                    value: "{{ .Values.cups.user }}"
-                  - name: CUPS_ADMIN_PASSWORD
-                    value: "{{ .Values.cups.password }}"
+                envFrom:
+                  - secretRef:
+                      name: cups-admin
                 command:
                   - sh
                   - -c
@@ -552,8 +567,9 @@ releases:
                   privileged: true
                 env:
                   TZ: "Europe/Madrid"
-                  CUPS_ADMIN_USER: "{{ .Values.cups.user }}"
-                  CUPS_ADMIN_PASSWORD: "{{ .Values.cups.password }}"
+                envFrom:
+                  - secretRef:
+                      name: cups-admin
                 command:
                   - sh
                   - -c
@@ -708,8 +724,6 @@ releases:
     needs:
       - printing/cups
       - printing/cups-avahi-service
-    secrets:
-      - secrets/app.sops.yaml
     values:
       - controllers:
           main:
