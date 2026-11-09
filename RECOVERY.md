@@ -46,10 +46,33 @@ any open port. Two precautions:
 - Issuance takes 1-2 minutes. Until then Traefik serves its self-signed
   certificate; that is not a failure.
 
+**Names under `lab.ingonzal.dev`: rebuilt from git, with three caveats.**
+Pi-hole answers `cups`, `homebridge`, `traefik` and `pihole` `.lab.ingonzal.dev`
+with the Traefik IP (`custom.hosts` in `pihole-unbound-v6.yaml.gotmpl`), and the
+IngressRoutes serve the Let's Encrypt certificate for them. The `.lan` names and
+the plain IPs keep working as certificate-free emergency access.
+- The public zone has a Cloudflare wildcard record, which also answers AAAA
+  queries for these names with Cloudflare IPv6 addresses. The `local=/<name>/`
+  lines in `[misc] dnsmasq_lines` stop that, per name (not for the whole zone,
+  so the ACME TXT lookups keep working). `address=/<name>/<ip>` does **not**
+  do it. Check with `nslookup -type=AAAA pihole.lab.ingonzal.dev 192.168.1.53`:
+  it must answer "No answer".
+- After changing `custom.hosts` run
+  `kubectl exec -n pihole deploy/pihole-v6 -c pihole -- pihole reloaddns`;
+  a restart is not needed.
+- A `pihole.toml` change from git is copied to the volume by the
+  `pihole-v6-init` Job at deploy time, but the running Pi-hole does not re-read
+  it. Apply it live with `pihole-FTL --config <key> <value>` or restart the pod.
+  The Job also deletes `/etc/pihole/dnsmasq.conf` on every deploy; the running
+  resolver keeps its loaded config and the file is regenerated on the next start.
+  A pod restart with nothing applied by hand was tested: it starts with the
+  `local=` lines and the records from git.
+
 **Lost without a backup** (PVCs on Longhorn, single replica):
-- Pi-hole (lists and settings changed from the web UI; the PVC has
-  `resource-policy: keep`, but that only protects against `helm uninstall`,
-  not against changing disks).
+- Pi-hole (settings changed from the web UI; the adlists are seeded from git by
+  the `pihole-adlists-seed` Job, which only adds missing URLs and never removes
+  lists added by hand; the PVC has `resource-policy: keep`, but that only
+  protects against `helm uninstall`, not against changing disks).
 - Homebridge (`/homebridge`): pairings and plugins. Accessories must be paired
   again in the Home app.
 - CUPS (`/etc/cups`): only job history and any per-printer option changed by hand
@@ -96,7 +119,9 @@ kubectl get certificate -A          # READY=True after 1-3 minutes
 sops -d secrets/app.sops.yaml > /dev/null && echo "sops OK"
 ```
 Then, with the data restored or recreated:
-- Pi-hole: `https://192.168.1.52`, and check `nslookup traefik.lan 192.168.1.53`.
+- Pi-hole: `https://192.168.1.52`, and check `nslookup traefik.lan 192.168.1.53`
+  and `nslookup pihole.lab.ingonzal.dev 192.168.1.53` (must be `192.168.1.50`,
+  with no IPv6 address).
 - Homebridge: `https://homebridge.lan` and the Home app.
 - Printing: print a test page from the iPhone.
 - Certificate served by Traefik:

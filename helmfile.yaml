@@ -431,6 +431,8 @@ releases:
                 </Location>
 
                 <Location /admin>
+                  AuthType Default
+                  Require user @SYSTEM
                   Order allow,deny
                   Allow from all
                 </Location>
