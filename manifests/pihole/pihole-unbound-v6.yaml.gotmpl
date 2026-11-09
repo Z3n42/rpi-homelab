@@ -445,10 +445,10 @@ resources:
                   while IFS= read -r URL; do
                     case "$URL" in ''|'#'*) continue ;; esac
                     grep -qxF "$URL" /tmp/existing.txt && continue
-                    CODE=$(curl -s -o /tmp/resp.json -w '%{http_code}' -X POST "$BASE/api/lists" \
+                    CODE=$(curl -s -o /tmp/resp.json -w '%{http_code}' -X POST "$BASE/api/lists?type=block" \
                       -H "Content-Type: application/json" \
                       -H "X-FTL-SID: $SID" \
-                      -d '{"address":"'"$URL"'","type":"block","comment":"'"$COMMENT"'","enabled":true}')
+                      -d '{"address":"'"$URL"'","comment":"'"$COMMENT"'","enabled":true}')
                     case "$CODE" in
                       2*) echo "✅ added $URL"; ADDED=$((ADDED+1)) ;;
                       *)  echo "❌ HTTP $CODE for $URL: $(cat /tmp/resp.json)"; FAILED=$((FAILED+1)) ;;
