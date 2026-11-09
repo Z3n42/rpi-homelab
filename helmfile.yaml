@@ -596,7 +596,8 @@ releases:
                     done
 
                     PRINTER="HP_LaserJet_P1005"
-                    if lpstat -p "$PRINTER" >/dev/null 2>&1; then
+                    if grep -q "^<Printer $PRINTER>" /etc/cups/printers.conf 2>/dev/null \
+                       || lpstat -p "$PRINTER" >/dev/null 2>&1; then
                       echo "ℹ️  Printer $PRINTER already configured"
                     else
                       URI=$(lpinfo -v 2>/dev/null | awk '$1=="direct" && index($2,"usb://HP/LaserJet%20P1005")==1 {print $2; exit}')
