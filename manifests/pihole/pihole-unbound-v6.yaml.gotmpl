@@ -74,6 +74,10 @@ resources:
         {{ .Values.network.services.homebridge.ip }} homebridge.{{ .Values.network.domain }}
         {{ .Values.network.services.pihole.web_ip }} pihole.{{ .Values.network.domain }}
         {{ .Values.network.node.zenpi_ip }} zenpi.{{ .Values.network.domain }}
+        {{ .Values.network.services.traefik.ip }} traefik.{{ .Values.network.tls_domain }}
+        {{ .Values.network.services.traefik.ip }} cups.{{ .Values.network.tls_domain }}
+        {{ .Values.network.services.traefik.ip }} homebridge.{{ .Values.network.tls_domain }}
+        {{ .Values.network.services.traefik.ip }} pihole.{{ .Values.network.tls_domain }}
 
   - apiVersion: v1
     kind: PersistentVolumeClaim
