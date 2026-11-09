@@ -1,0 +1,10 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-to-admin
+  namespace: pihole
+spec:
+  redirectRegex:
+    regex: '^(https?://[^/]+)/?$'
+    replacement: '${1}/admin/'
+    permanent: false
