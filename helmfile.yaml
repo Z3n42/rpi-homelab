@@ -347,6 +347,21 @@ releases:
           - {{ tpl (readFile "manifests/tailscale/tailscale-subnet-router.yaml.gotmpl") . | indent 12 | trim }}
 
   # -----------------------------
+  # TRAEFIK TLS (wildcard certificate + default TLSStore)
+  # -----------------------------
+  - name: traefik-tls
+    labels:
+      stack: ingresses
+    chart: bedag/raw
+    version: "2.0.2"
+    namespace: traefik-system
+    needs:
+      - traefik-system/traefik-crds
+      - cert-manager/cert-manager-issuers
+    values:
+      - manifests/traefik/traefik-tls.yaml.gotmpl
+
+  # -----------------------------
   # TRAEFIK RESOURCES
   # -----------------------------
   - name: traefik-resources
@@ -357,10 +372,12 @@ releases:
     namespace: traefik-system
     needs:
       - traefik-system/traefik
+      - traefik-system/traefik-tls
       - printing/cups
       - homebridge/homebridge
     values:
       - resources:
+          - {{ tpl (readFile "manifests/ingresses/traefik-redirect-middleware.yaml.gotmpl") . | indent 12 | trim }}
           - {{ tpl (readFile "manifests/ingresses/traefik-dashboard.yaml.gotmpl") . | indent 12 | trim }}
           - {{ tpl (readFile "manifests/ingresses/cups-ingress.yaml.gotmpl") . | indent 12 | trim }}
           - {{ tpl (readFile "manifests/ingresses/homebridge-ingress.yaml.gotmpl") . | indent 12 | trim }}
@@ -552,7 +569,35 @@ releases:
                     fi
 
                     echo "✅ Starting CUPS..."
-                    exec cupsd -f
+                    cupsd -f &
+                    CUPSD_PID=$!
+                    trap 'kill -TERM "$CUPSD_PID" 2>/dev/null; wait "$CUPSD_PID"; exit $?' TERM INT
+
+                    for i in $(seq 1 30); do
+                      lpstat -r >/dev/null 2>&1 && break
+                      kill -0 "$CUPSD_PID" 2>/dev/null || { echo "❌ cupsd exited early"; exit 1; }
+                      sleep 1
+                    done
+
+                    PRINTER="HP_LaserJet_P1005"
+                    if lpstat -p "$PRINTER" >/dev/null 2>&1; then
+                      echo "ℹ️  Printer $PRINTER already configured"
+                    else
+                      URI=$(lpinfo -v 2>/dev/null | awk '$1=="direct" && index($2,"usb://HP/LaserJet%20P1005")==1 {print $2; exit}')
+                      if [ -z "$URI" ]; then
+                        echo "⚠️  HP P1005 not on USB, $PRINTER not created"
+                      else
+                        echo "🖨️  Creating $PRINTER at $URI"
+                        lpadmin -p "$PRINTER" -E -v "$URI" \
+                          -m "foo2zjs:0/ppd/foo2zjs/HP-LaserJet_P1005.ppd" \
+                          -D "Impresora ZenPi Lab" -L "ZenPi Lab" \
+                          -o printer-is-shared=true -o job-sheets-default=none \
+                          && echo "✅ $PRINTER created" \
+                          || echo "❌ lpadmin failed for $PRINTER"
+                      fi
+                    fi
+
+                    wait "$CUPSD_PID"
       - service:
           main:
             controller: main

@@ -62,9 +62,6 @@ resources:
         maxDBdays = 30
         DBinterval = 60.0
 
-        [gravity]
-        updateFrequency = 7
-
   - apiVersion: v1
     kind: ConfigMap
     metadata:
@@ -333,6 +330,61 @@ resources:
           port: 443
           targetPort: 443
 
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: pihole-adlists
+      namespace: pihole
+    data:
+      adlists.txt: |
+        https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+        https://big.oisd.nl
+        https://blocklistproject.github.io/Lists/basic.txt
+        https://v.firebog.net/hosts/static/w3kbl.txt
+        https://adaway.org/hosts.txt
+        https://v.firebog.net/hosts/AdguardDNS.txt
+        https://v.firebog.net/hosts/Admiral.txt
+        https://v.firebog.net/hosts/Easylist.txt
+        https://v.firebog.net/hosts/Easyprivacy.txt
+        https://v.firebog.net/hosts/Prigent-Ads.txt
+        https://v.firebog.net/hosts/Prigent-Crypto.txt
+        https://phishing.army/download/phishing_army_blocklist_extended.txt
+        https://blocklistproject.github.io/Lists/ads.txt
+        https://blocklistproject.github.io/Lists/malware.txt
+        https://blocklistproject.github.io/Lists/phishing.txt
+        https://blocklistproject.github.io/Lists/tracking.txt
+        https://blocklistproject.github.io/Lists/abuse.txt
+        https://blocklistproject.github.io/Lists/ransomware.txt
+        https://raw.githubusercontent.com/PolishFiltersTeam/KADhosts/master/KADhosts.txt
+        https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Spam/hosts
+        https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.2o7Net/hosts
+        https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Risk/hosts
+        https://raw.githubusercontent.com/crazy-max/WindowsSpyBlocker/master/data/hosts/spy.txt
+        https://raw.githubusercontent.com/Spam404/lists/master/main-blacklist.txt
+        https://raw.githubusercontent.com/anudeepND/blacklist/master/adservers.txt
+        https://raw.githubusercontent.com/bigdargon/hostsVN/master/hosts
+        https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
+        https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext
+        https://blocklistproject.github.io/Lists/scam.txt
+        https://blocklistproject.github.io/Lists/fraud.txt
+        https://blocklistproject.github.io/Lists/gambling.txt
+        https://blocklistproject.github.io/Lists/crypto.txt
+        https://blocklistproject.github.io/Lists/redirect.txt
+        https://blocklistproject.github.io/Lists/smart-tv.txt
+        https://blocklistproject.github.io/Lists/vaping.txt
+        https://raw.githubusercontent.com/blocklistproject/Lists/master/youtube.txt
+        https://gitlab.com/quidsup/notrack-blocklists/raw/master/notrack-malware.txt
+        https://hostfiles.frogeye.fr/firstparty-trackers-hosts.txt
+        https://lists.cyberhost.uk/malware.txt
+        https://raw.githubusercontent.com/AssoEchap/stalkerware-indicators/master/generated/hosts
+        https://raw.githubusercontent.com/DandelionSprout/adfilt/master/Alternate%20versions%20Anti-Malware%20List/AntiMalwareHosts.txt
+        https://raw.githubusercontent.com/FadeMind/hosts.extras/master/UncheckyAds/hosts
+        https://raw.githubusercontent.com/kboghdady/youTube_ads_4_pi-hole/master/youtubelist.txt
+        https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/pro.txt
+        https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/tif.medium.txt
+        https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/native.lgwebos.txt
+        https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/fake.txt
+
   - apiVersion: batch/v1
     kind: Job
     metadata:
@@ -346,94 +398,75 @@ resources:
           restartPolicy: OnFailure
           containers:
             - name: seed-adlists
-              image: curlimages/curl:latest
+              image: curlimages/curl:8.11.1
               env:
                 - name: PIHOLE_PASSWORD
                   valueFrom:
                     secretKeyRef:
                       name: pihole-web-password
                       key: password
+              volumeMounts:
+                - name: adlists
+                  mountPath: /lists
+                  readOnly: true
               command:
                 - sh
                 - -c
                 - |
                   BASE="http://pihole-web.pihole.svc.cluster.local"
+                  COMMENT="Managed by helmfile (pihole-adlists)"
 
-                  until curl -s "$BASE/api/auth" > /dev/null 2>&1; do
+                  until curl -s -o /dev/null "$BASE/api/auth"; do
                     echo "Waiting for Pihole API..."
                     sleep 5
                   done
 
-                  TOKEN=$(curl -sf -X POST "$BASE/api/auth" \
+                  SID=$(curl -sf -X POST "$BASE/api/auth" \
                     -H "Content-Type: application/json" \
                     -d '{"password":"'"$PIHOLE_PASSWORD"'"}' \
-                    | grep -o '"sid":"[^"]*"' | cut -d'"' -f4)
+                    | grep -o '"sid": *"[^"]*"' | cut -d'"' -f4)
+                  [ -n "$SID" ] || { echo "❌ Could not authenticate"; exit 1; }
+                  trap 'curl -s -o /dev/null -X DELETE "$BASE/api/auth" -H "X-FTL-SID: $SID"' EXIT
 
-                  COUNT=$(curl -sf "$BASE/api/lists?type=block" \
-                    -H "sid: $TOKEN" \
-                    | grep -o '"address"' | wc -l)
+                  curl -sf "$BASE/api/lists?type=block" -H "X-FTL-SID: $SID" > /tmp/lists.json \
+                    || { echo "❌ Could not read current lists"; exit 1; }
+                  grep -o '"address": *"[^"]*"' /tmp/lists.json | cut -d'"' -f4 | sort -u > /tmp/existing.txt
+                  KEYS=$(grep -o '"address"' /tmp/lists.json | wc -l)
+                  HAVE=$(wc -l < /tmp/existing.txt)
+                  echo "Pi-hole has $HAVE block lists"
+                  [ "$KEYS" -eq "$HAVE" ] || { echo "❌ Could not parse current lists ($KEYS keys, $HAVE addresses)"; exit 1; }
 
-                  if [ "$COUNT" -gt 5 ]; then
-                    echo "✅ Already has $COUNT lists, skipping"
-                    exit 0
-                  fi
-
-                  echo "Seeding $COUNT lists..."
-                  for URL in \
-                    "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts" \
-                    "https://big.oisd.nl" \
-                    "https://blocklistproject.github.io/Lists/basic.txt" \
-                    "https://v.firebog.net/hosts/static/w3kbl.txt" \
-                    "https://adaway.org/hosts.txt" \
-                    "https://v.firebog.net/hosts/AdguardDNS.txt" \
-                    "https://v.firebog.net/hosts/Admiral.txt" \
-                    "https://v.firebog.net/hosts/Easylist.txt" \
-                    "https://v.firebog.net/hosts/Easyprivacy.txt" \
-                    "https://v.firebog.net/hosts/Prigent-Ads.txt" \
-                    "https://v.firebog.net/hosts/Prigent-Crypto.txt" \
-                    "https://urlhaus.abuse.ch/downloads/hostfile/" \
-                    "https://phishing.army/download/phishing_army_blocklist_extended.txt" \
-                    "https://blocklistproject.github.io/Lists/ads.txt" \
-                    "https://blocklistproject.github.io/Lists/malware.txt" \
-                    "https://blocklistproject.github.io/Lists/phishing.txt" \
-                    "https://blocklistproject.github.io/Lists/tracking.txt" \
-                    "https://blocklistproject.github.io/Lists/abuse.txt" \
-                    "https://blocklistproject.github.io/Lists/ransomware.txt" \
-                    "https://raw.githubusercontent.com/PolishFiltersTeam/KADhosts/master/KADhosts.txt" \
-                    "https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Spam/hosts" \
-                    "https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.2o7Net/hosts" \
-                    "https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Risk/hosts" \
-                    "https://raw.githubusercontent.com/crazy-max/WindowsSpyBlocker/master/data/hosts/spy.txt" \
-                    "https://raw.githubusercontent.com/Spam404/lists/master/main-blacklist.txt" \
-                    "https://raw.githubusercontent.com/anudeepND/blacklist/master/adservers.txt" \
-                    "https://raw.githubusercontent.com/bigdargon/hostsVN/master/hosts" \
-                    "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt" \
-                    "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext" \
-                    "https://blocklistproject.github.io/Lists/scam.txt" \
-                    "https://blocklistproject.github.io/Lists/fraud.txt" \
-                    "https://blocklistproject.github.io/Lists/gambling.txt" \
-                    "https://blocklistproject.github.io/Lists/crypto.txt" \
-                    "https://blocklistproject.github.io/Lists/redirect.txt" \
-                    "https://blocklistproject.github.io/Lists/smart-tv.txt" \
-                    "https://blocklistproject.github.io/Lists/vaping.txt"
-                    "https://github.com/blocklistproject/Lists/blob/master/youtube.txt" \
-                    "https://gitlab.com/quidsup/notrack-blocklists/raw/master/notrack-malware.txt" \
-                    "https://hostfiles.frogeye.fr/firstparty-trackers-hosts.txt" \
-                    "https://lists.cyberhost.uk/malware.txt" \
-                    "https://raw.githubusercontent.com/AssoEchap/stalkerware-indicators/master/generated/hosts" \
-                    "https://raw.githubusercontent.com/DandelionSprout/adfilt/master/Alternate%20versions%20Anti-Malware%20List/AntiMalwareHosts.txt" \
-                    "https://raw.githubusercontent.com/FadeMind/hosts.extras/master/UncheckyAds/hosts" \
-                    "https://raw.githubusercontent.com/kboghdady/youTube_ads_4_pi-hole/master/youtubelist.txt" ; do
-                    curl -sf -X POST "$BASE/api/lists" \
+                  ADDED=0
+                  FAILED=0
+                  while IFS= read -r URL; do
+                    case "$URL" in ''|'#'*) continue ;; esac
+                    grep -qxF "$URL" /tmp/existing.txt && continue
+                    CODE=$(curl -s -o /tmp/resp.json -w '%{http_code}' -X POST "$BASE/api/lists" \
                       -H "Content-Type: application/json" \
-                      -H "sid: $TOKEN" \
-                      -d '{"address":"'"$URL"'","type":"block","enabled":true}' \
-                      && echo "✅ $URL" || echo "⚠️ Failed: $URL"
-                  done
+                      -H "X-FTL-SID: $SID" \
+                      -d '{"address":"'"$URL"'","type":"block","comment":"'"$COMMENT"'","enabled":true}')
+                    case "$CODE" in
+                      2*) echo "✅ added $URL"; ADDED=$((ADDED+1)) ;;
+                      *)  echo "❌ HTTP $CODE for $URL: $(cat /tmp/resp.json)"; FAILED=$((FAILED+1)) ;;
+                    esac
+                  done < /lists/adlists.txt
+                  echo "Summary: $ADDED added, $FAILED failed"
 
-                  curl -sf -X POST "$BASE/api/gravity" -H "sid: $TOKEN"
-                  echo "✅ Gravity update triggered"
-
+                  if [ "$ADDED" -gt 0 ]; then
+                    echo "Updating gravity (takes a few minutes)..."
+                    if curl -sf --max-time 1200 -X POST "$BASE/api/action/gravity" \
+                         -H "X-FTL-SID: $SID" > /tmp/gravity.log; then
+                      echo "✅ Gravity updated"
+                    else
+                      echo "❌ Gravity update failed"; tail -20 /tmp/gravity.log
+                      FAILED=$((FAILED+1))
+                    fi
+                  fi
+                  [ "$FAILED" -eq 0 ]
+          volumes:
+            - name: adlists
+              configMap:
+                name: pihole-adlists
 
   - apiVersion: traefik.io/v1alpha1
     kind: Middleware

@@ -1,5 +1,6 @@
 network:
   domain: "lan"
+  tls_domain: "lab.ingonzal.dev"
   node:
     zenpi_ip: "192.168.1.130"
   metallb:
