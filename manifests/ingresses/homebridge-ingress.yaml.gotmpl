@@ -8,7 +8,7 @@ spec:
     - web
     - websecure
   routes:
-    - match: Host(`homebridge.{{ index .Values "network" "domain" }}`)
+    - match: Host(`homebridge.{{ index .Values "network" "domain" }}`) || Host(`homebridge.{{ index .Values "network" "tls_domain" }}`)
       kind: Rule
       services:
         - name: homebridge

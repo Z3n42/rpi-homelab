@@ -8,7 +8,7 @@ spec:
     - web
     - websecure
   routes:
-    - match: Host(`traefik.{{ index .Values "network" "domain" }}`) && Path(`/`)
+    - match: (Host(`traefik.{{ index .Values "network" "domain" }}`) || Host(`traefik.{{ index .Values "network" "tls_domain" }}`)) && Path(`/`)
       kind: Rule
       services:
         - name: api@internal
@@ -16,7 +16,7 @@ spec:
       middlewares:
         - name: redirect-to-dashboard
           namespace: traefik-system 
-    - match: Host(`traefik.{{ index .Values "network" "domain" }}`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))
+    - match: (Host(`traefik.{{ index .Values "network" "domain" }}`) || Host(`traefik.{{ index .Values "network" "tls_domain" }}`)) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))
       kind: Rule
       services:
         - name: api@internal

@@ -26,6 +26,16 @@ OAuth, etc.).
 `helmfile.yaml`, the IngressRoutes, Pi-hole (configuration and DNS records),
 MetalLB, cert-manager, issuers and the TLSStore.
 
+**CUPS: rebuilds itself** (tested by deleting the queue and restarting the pod).
+At every start, if the queue `HP_LaserJet_P1005` is missing and the printer is
+on USB, the CUPS container creates it with the same driver and options
+(`lpadmin`, declared in the container command in `helmfile.yaml`). The admin user
+comes from the `cups-admin` Secret (values in `secrets/app.sops.yaml`). If the
+printer is unplugged when the pod starts, nothing is created and the log says so;
+plugging it in restarts the pod (udev rule) and the queue is created then. The
+creation takes a few seconds after the pod shows as ready, because CUPS has no
+readiness probe yet.
+
 **Certificates: nothing to migrate.** cert-manager re-issues the wildcard via
 DNS-01 using the Cloudflare token. It does not depend on the IP, the node or
 any open port. Two precautions:
@@ -42,7 +52,8 @@ any open port. Two precautions:
   not against changing disks).
 - Homebridge (`/homebridge`): pairings and plugins. Accessories must be paired
   again in the Home app.
-- CUPS (`/etc/cups`): the printer has to be added again.
+- CUPS (`/etc/cups`): only job history and any per-printer option changed by hand
+  in the web UI; the queue itself is recreated from git.
 
 ## 3. Rebuild on the same Raspberry Pi (new SD card or SSD)
 
@@ -134,8 +145,9 @@ and the fixed IPs must stay outside the router's DHCP range.
 
 1. **Store the age key off the SD card** and check that it decrypts:
    `SOPS_AGE_KEY_FILE=<copy> sops -d secrets/app.sops.yaml > /dev/null`.
-2. **Longhorn backup** (NFS/S3 target or an SSD) for Pi-hole, Homebridge and
-   CUPS; or at least export those three PVCs before every disk change.
+2. **Longhorn backup** (NFS/S3 target or an SSD) for Pi-hole and Homebridge
+   (CUPS no longer needs it); or at least export those PVCs before every disk
+   change.
 3. **Rebuild rehearsal** of the wizard in an arm64 VM (for example UTM), and
    record here whatever fails. Until then this document is a reasoned
    hypothesis, not a verified procedure.
